@@ -109,6 +109,14 @@
                             </div>
                         </div>
 
+                        <div class="cashback-box" id="cashback-box">
+                            <div class="cashback-head">
+                                <span class="cashback-label">🎁 Кешбек за апгрейды</span>
+                                <span class="cashback-value" id="cashback-value">0.00 $B</span>
+                            </div>
+                            <button id="cashback-btn" class="cashback-btn" disabled>Кешбек ещё не начислен</button>
+                        </div>
+
                         <button id="logout-btn" class="logout-btn">Выйти из аккаунта</button>
                         
                         <button id="admin-panel-btn" class="admin-panel-btn" style="display: none;">Панель админа</button>
@@ -159,18 +167,53 @@
                         <div class="pane left-pane">
                             <div class="pane-header">
                                 <div class="pane-static-title" id="inv-pane-title">📦 Ваш Инвентарь</div>
+                                <div class="topup-box" id="topup-box" style="display: none;">
+                                    <div class="topup-head">
+                                        <span class="topup-label">Добавить баланс</span>
+                                        <span class="topup-amount" id="topup-amount">+0 $B</span>
+                                    </div>
+                                    <input type="range" id="topup-range" class="topup-range" min="0" max="0" step="1" value="0">
+                                    <div class="topup-scale">
+                                        <span>0</span>
+                                        <span id="topup-max">0</span>
+                                    </div>
+                                </div>
                             </div>
                             <div class="grid-content" id="inventory-grid"></div>
                         </div>
 
                         <div class="pane right-pane">
                             <div class="pane-header flex-header">
-                                <button class="sort-btn" id="sort-price-btn">⬇️ По цене</button>
-                                <div class="price-filter">
-                                    <input type="number" placeholder="от" id="price-from">
-                                    <input type="number" placeholder="до" id="price-to">
+                                <div class="pane-static-title filter-title">
+                                    🎯 Цели апгрейда
+                                    <span class="count-pill" id="target-count">0</span>
                                 </div>
-                                <input type="text" placeholder="Поиск..." class="search-bar" id="search-input">
+
+                                <div class="filter-row">
+                                    <div class="search-wrap">
+                                        <svg class="search-ico" viewBox="0 0 24 24">
+                                            <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                                        </svg>
+                                        <input type="text" placeholder="Поиск кубов..." class="search-bar" id="search-input">
+                                        <button class="search-clear" id="search-clear" type="button" aria-label="Очистить">×</button>
+                                    </div>
+                                    <button class="sort-btn" id="sort-price-btn" type="button">
+                                        <span class="sort-ico" id="sort-ico">⬇</span>
+                                        <span>По цене</span>
+                                    </button>
+                                </div>
+
+                                <div class="price-filter">
+                                    <label class="price-box">
+                                        <span class="price-lbl">от</span>
+                                        <input type="number" placeholder="0" id="price-from">
+                                    </label>
+                                    <span class="price-sep">—</span>
+                                    <label class="price-box">
+                                        <span class="price-lbl">до</span>
+                                        <input type="number" placeholder="∞" id="price-to">
+                                    </label>
+                                </div>
                             </div>
                             <div class="grid-content" id="target-grid"></div>
                         </div>

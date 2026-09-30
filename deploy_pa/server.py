@@ -9,15 +9,16 @@ import requests  # <-- Новая библиотека для отправки �
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-DB_FILE = "users.txt"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.join(BASE_DIR, "users.txt")
 
 # ==========================================
-# 🤖 ВСТАВЬ СЮДА ТОКЕН ТВОЕГО ОСНОВНОГО БОТА
+# 🤖 ТОКЕН ОСНОВНОГО БОТА (переопределяется переменной окружения)
 # ==========================================
-BOT_TOKEN = "8835861254:AAGVGXqoEjADMcSA6IHJ8btbXum-Wr-PUdY" 
+BOT_TOKEN = os.environ.get('BOT_TOKEN', "8835861254:AAGVGXqoEjADMcSA6IHJ8btbXum-Wr-PUdY")
 
 # Общий секрет для доступа ботов к админ-функциям сервера
-ADMIN_KEY = "0bec47b3339752c8e30c3468" 
+ADMIN_KEY = os.environ.get('ADMIN_KEY', "0bec47b3339752c8e30c3468")
 
 def send_tg_message(chat_id, text):
     """Функция для отправки сообщения пользователю от имени бота"""
@@ -35,7 +36,7 @@ def init_db():
             pass
 
 def parse_user_data(line):
-    data = {"rank": "PLAYER [ 1 ]", "balance": 1250.0, "luck": 1.0, "inventory": [], "banned": False, "ban_until": 0, "ban_reason": ""}
+    data = {"rank": "PLAYER [ 1 ]", "balance": 1250.0, "luck": 1.0, "cashback": 0.0, "inventory": [], "banned": False, "ban_until": 0, "ban_reason": ""}
     
     if " | Ранг: " in line:
         data["rank"] = line.split(" | Ранг: ")[1].split(" |")[0].strip()
@@ -45,6 +46,9 @@ def parse_user_data(line):
     
     luck_match = re.search(r"\|\s*Удача:\s*([0-9.]+)", line)
     if luck_match: data["luck"] = float(luck_match.group(1))
+    
+    cash_match = re.search(r"\|\s*Кешбек:\s*([0-9.]+)", line)
+    if cash_match: data["cashback"] = float(cash_match.group(1))
     
     inv_match = re.search(r"\|\s*Инвентарь:\s*([0-9,]+)", line)
     if inv_match:
@@ -72,7 +76,7 @@ def register():
         if any(f"Логин: {username} |" in line for line in f): return jsonify({"status": "error", "message": "⚠️ Логин занят!"}), 400
     web_id = f"WEB-{random.randint(10000000, 99999999)}"
     with open(DB_FILE, "a", encoding="utf-8") as f:
-        f.write(f"ID: {web_id} | Логин: {username} | Пароль: {password} | Ранг: PLAYER [ 1 ] | Баланс: 1250 | Удача: 1.0 | Инвентарь: 101,103,104\n")
+        f.write(f"ID: {web_id} | Логин: {username} | Пароль: {password} | Ранг: PLAYER [ 1 ] | Баланс: 1250 | Удача: 1.0 | Кешбек: 0.0000 | Инвентарь: 101,103,104\n")
     return jsonify({"status": "success"})
 
 @app.route('/login', methods=['POST', 'OPTIONS'])
@@ -89,7 +93,7 @@ def login():
                 user_data = parse_user_data(line)
                 if user_data["banned"]: 
                     return jsonify({"status": "banned", "ban_until": user_data["ban_until"], "ban_reason": user_data["ban_reason"]}), 403
-                return jsonify({"status": "success", "rank": user_data["rank"], "balance": user_data["balance"], "luck": user_data["luck"], "inventory": user_data["inventory"]}), 200
+                return jsonify({"status": "success", "rank": user_data["rank"], "balance": user_data["balance"], "luck": user_data["luck"], "cashback": user_data["cashback"], "inventory": user_data["inventory"]}), 200
                 
     return jsonify({"status": "error", "message": "❌ Неверные данные!"}), 401
 
@@ -126,18 +130,18 @@ def tg_auth():
         
         return jsonify({
             "status": "success", "username": display_name, "rank": user_data["rank"],
-            "balance": user_data["balance"], "luck": user_data["luck"], "inventory": user_data["inventory"]
+            "balance": user_data["balance"], "luck": user_data["luck"], "cashback": user_data["cashback"], "inventory": user_data["inventory"]
         }), 200
     else:
         with open(DB_FILE, "a", encoding="utf-8") as f:
-            f.write(f"ID: {search_id} | Логин: {display_name} | Пароль: TG_AUTH | Ранг: PLAYER [ 1 ] | Баланс: 1250 | Удача: 1.0 | Инвентарь: 101,103,104\n")
+            f.write(f"ID: {search_id} | Логин: {display_name} | Пароль: TG_AUTH | Ранг: PLAYER [ 1 ] | Баланс: 1250 | Удача: 1.0 | Кешбек: 0.0000 | Инвентарь: 101,103,104\n")
             
         # Отправляем сообщение об успешной регистрации
         send_tg_message(tg_id, "🎉 <b>Регистрация успешна!</b>\nВам начислено 1250 $B и стартовые предметы.\nДобро пожаловать в BurnBox!")
         
         return jsonify({
             "status": "success", "username": display_name, "rank": "PLAYER [ 1 ]",
-            "balance": 1250.0, "luck": 1.0, "inventory": [101, 103, 104]
+            "balance": 1250.0, "luck": 1.0, "cashback": 0.0, "inventory": [101, 103, 104]
         }), 200
 
 @app.route('/get_rank', methods=['POST', 'OPTIONS'])
@@ -153,7 +157,7 @@ def get_rank():
                 user_data = parse_user_data(line)
                 if user_data["banned"]: 
                     return jsonify({"status": "banned", "ban_until": user_data["ban_until"], "ban_reason": user_data["ban_reason"]}), 403
-                return jsonify({"status": "success", "rank": user_data["rank"], "balance": user_data["balance"], "luck": user_data["luck"], "inventory": user_data["inventory"]}), 200
+                return jsonify({"status": "success", "rank": user_data["rank"], "balance": user_data["balance"], "luck": user_data["luck"], "cashback": user_data["cashback"], "inventory": user_data["inventory"]}), 200
     return jsonify({"status": "error"}), 404
 
 @app.route('/update_progress', methods=['POST', 'OPTIONS'])
@@ -162,6 +166,7 @@ def update_progress():
     data = request.get_json(force=True) or {}
     username = data.get('username')
     balance = data.get('balance')
+    cashback = data.get('cashback', 0)
     inventory = data.get('inventory', [])
     inv_str = ",".join(map(str, inventory))
     
@@ -173,6 +178,9 @@ def update_progress():
             found = True
             if "| Баланс:" in line: line = re.sub(r"\|\s*Баланс:\s*[0-9.]+", f"| Баланс: {balance}", line)
             else: line = line.strip() + f" | Баланс: {balance}\n"
+            
+            if "| Кешбек:" in line: line = re.sub(r"\|\s*Кешбек:\s*[0-9.]+", f"| Кешбек: {cashback}", line)
+            else: line = line.strip() + f" | Кешбек: {cashback}\n"
             
             if "| Инвентарь:" in line: line = re.sub(r"\|\s*Инвентарь:\s*[0-9,]*", f"| Инвентарь: {inv_str}", line)
             else: line = line.strip() + f" | Инвентарь: {inv_str}\n"
@@ -308,8 +316,20 @@ def api_admin_update_field():
     return jsonify({"status": "error", "message": "Пользователь не найден"}), 404
 
 
+@app.route('/api/health', methods=['GET', 'OPTIONS'])
+def api_health():
+    """Проверка живости бэкенда (для деплоя и ботов)"""
+    if request.method == 'OPTIONS': return '', 200
+    init_db()
+    try:
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            users = sum(1 for line in f if line.strip())
+    except OSError:
+        users = 0
+    return jsonify({"status": "success", "ok": True, "users": users})
+
+
 # --- ОТДАЧА СТРАНИЦЫ И СТАТИКИ (всё на одном порту 5005) ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_FILES = {"index.html", "style (4).css", "app.js"}
 
 @app.route('/')
