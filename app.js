@@ -1,5 +1,5 @@
 let gameState = {
-    balance: 1250, luck: 1.0, isTurbo: false, sortAsc: true,
+    balance: 1250, luck: 1.0, luckBoost: 0, cashback: 0, isTurbo: false, sortAsc: true,
     selectedInput: null, selectedOutput: null, cart: {}, 
     isAuthorized: false, username: "Игрок", rank: "PLAYER [ 1 ]", isAdmin: false,
     
@@ -17,7 +17,14 @@ let gameState = {
 };
 
 const tg = window.Telegram?.WebApp;
-const API_BASE = "https://USERNAME.pythonanywhere.com"; // ← сюда адрес сервера (PythonAnywhere)
+
+// Адрес бэкенда. Локально (ПК или телефон в одной сети) идём на сам сервер,
+// с Netlify — в облако. Впиши сюда свой логин PythonAnywhere.
+const CLOUD_API = "https://burnbox-me3b.onrender.com";
+const API_BASE = (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
+  /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(location.hostname))
+  ? location.origin
+  : CLOUD_API;
 const balanceEl = document.getElementById('balance-amount');
 const invGrid = document.getElementById('inventory-grid');
 const targetGrid = document.getElementById('target-grid');
@@ -33,6 +40,9 @@ const searchInput = document.getElementById('search-input');
 const priceFrom = document.getElementById('price-from');
 const priceTo = document.getElementById('price-to');
 const sortPriceBtn = document.getElementById('sort-price-btn');
+const sortIco = document.getElementById('sort-ico');
+const targetCount = document.getElementById('target-count');
+const searchClear = document.getElementById('search-clear');
 const infoBlock = document.getElementById('wheel-info-block');
 const mainInventoryGrid = document.getElementById('main-inventory-grid');
 const mainMarketGrid = document.getElementById('main-market-grid');
@@ -56,8 +66,23 @@ const avatarUpload = document.getElementById('avatar-upload');
 const profileAvatar = document.getElementById('profile-avatar');
 const profileStatItems = document.getElementById('profile-stat-items');
 const profileStatValue = document.getElementById('profile-stat-value');
+const cashbackBox = document.getElementById('cashback-box');
+const cashbackValue = document.getElementById('cashback-value');
+const cashbackBtn = document.getElementById('cashback-btn');
 const profileRankDisplay = document.getElementById('profile-rank-display');
 const adminPanelBtn = document.getElementById('admin-panel-btn');
+const topupBox = document.getElementById('topup-box');
+const topupRange = document.getElementById('topup-range');
+const topupAmount = document.getElementById('topup-amount');
+const topupMaxLbl = document.getElementById('topup-max');
+
+const CHANCE_CAP = 80;
+
+// Кешбек начисляется от цены исходного скина за каждый апгрейд.
+// 0.001 = 0.1%: скин за 500 $B даёт 0.5 $B. Копится в 4 знака, чтобы 0.025 не терялось.
+const CASHBACK_RATE = 0.001;
+
+function roundCashback(n) { return Math.round((n + Number.EPSILON) * 10000) / 10000; }
 const logoutBtn = document.getElementById('logout-btn');
 const logoutModal = document.getElementById('logout-modal');
 const logoutConfirmYes = document.getElementById('logout-confirm-yes');
@@ -132,7 +157,7 @@ async function autoLogin() {
             data = await response.json();
             if (response.status === 403) { showBanScreen(data.ban_until, data.ban_reason); return true; }
             if (response.ok && data.status === "success") {
-                bypassAuth(session.user, data.rank, data.balance, data.luck, data.inventory);
+                bypassAuth(session.user, data.rank, data.balance, data.luck, data.inventory, data.cashback);
                 return true;
             }
         } else {
@@ -143,7 +168,7 @@ async function autoLogin() {
             data = await response.json();
             if (response.status === 403) { showBanScreen(data.ban_until, data.ban_reason); return true; }
             if (response.ok && data.status === "success") {
-                bypassAuth(session.user, data.rank, data.balance, data.luck, data.inventory);
+                bypassAuth(session.user, data.rank, data.balance, data.luck, data.inventory, data.cashback);
                 return true;
             }
         }
@@ -198,7 +223,7 @@ async function checkTgAuth(username) {
         if (response.status === 403) { showBanScreen(data.ban_until, data.ban_reason); return; }
         if (response.ok && data.status === "success") {
             saveSession(username, '');
-            bypassAuth(username, data.rank, data.balance, data.luck, data.inventory);
+            bypassAuth(username, data.rank, data.balance, data.luck, data.inventory, data.cashback);
         }
     } catch (e) { console.error(e); }
 }
@@ -209,7 +234,7 @@ async function saveProgressToServer() {
     try {
         await fetch(API_BASE + '/update_progress', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: gameState.username, balance: gameState.balance, inventory: invIds })
+            body: JSON.stringify({ username: gameState.username, balance: gameState.balance, cashback: roundCashback(gameState.cashback || 0), inventory: invIds })
         });
     } catch (e) { console.error(e); }
 }
@@ -226,6 +251,7 @@ async function fetchActualRank(username) {
         
         if (response.ok && data.status === "success") {
             gameState.rank = data.rank; gameState.balance = data.balance; gameState.luck = data.luck;
+            gameState.cashback = roundCashback(data.cashback || 0);
             if (data.inventory && data.inventory.length > 0) {
                 gameState.inventory = [];
                 data.inventory.forEach(baseId => {
@@ -238,11 +264,11 @@ async function fetchActualRank(username) {
     } catch (e) { console.error("Ошибка синхронизации", e); }
 }
 
-function bypassAuth(name, rank = "PLAYER [ 1 ]", balance = 1250, luck = 1.0, inventoryIds = []) {
+function bypassAuth(name, rank = "PLAYER [ 1 ]", balance = 1250, luck = 1.0, inventoryIds = [], cashback = 0) {
     if (screenAuth) screenAuth.style.display = 'none';
     if (gameWrapper) gameWrapper.style.display = 'flex';
     gameState.isAuthorized = true; gameState.username = name; gameState.rank = rank;
-    gameState.balance = balance; gameState.luck = luck;
+    gameState.balance = balance; gameState.luck = luck; gameState.cashback = roundCashback(cashback || 0);
     
     if (inventoryIds && inventoryIds.length > 0) {
         gameState.inventory = [];
@@ -266,6 +292,9 @@ function updateProfileUI() {
     const adminRanks = ["HELPER", "MODERATOR", "ADMIN", "OWNER"];
     gameState.isAdmin = adminRanks.some(r => gameState.rank.toUpperCase().includes(r));
     if (adminPanelBtn) adminPanelBtn.style.display = gameState.isAdmin ? 'block' : 'none';
+    if (topupBox) topupBox.style.display = gameState.isAdmin ? 'flex' : 'none';
+    syncTopupRange();
+    updateCashbackUI();
 }
 
 function updateProfileStats() {
@@ -274,7 +303,90 @@ function updateProfileStats() {
     profileStatValue.textContent = `${gameState.inventory.reduce((sum, item) => sum + item.price, 0).toLocaleString()} $B`;
 }
 
-function renderBalance() { if (balanceEl) balanceEl.textContent = `${gameState.balance.toLocaleString()} $BURN`; }
+function updateCashbackUI() {
+    if (!cashbackValue || !cashbackBtn || !cashbackBox) return;
+    const amount = gameState.cashback || 0;
+    cashbackValue.textContent = `${amount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} $B`;
+    const ready = amount >= 0.01;
+    cashbackBtn.disabled = !ready;
+    cashbackBtn.textContent = ready ? 'Забрать кешбек' : 'Кешбек ещё не начислен';
+    cashbackBox.classList.toggle('ready', ready);
+}
+
+function collectCashback() {
+    const amount = roundCashback(gameState.cashback || 0);
+    if (amount < 0.01) { updateCashbackUI(); return; }
+    gameState.balance = Math.round((gameState.balance + Math.floor(amount * 100) / 100) * 100) / 100;
+    gameState.cashback = 0;
+    updateBalanceText();
+    updateCashbackUI();
+    saveProgressToServer();
+}
+
+function updateBalanceText() { if (balanceEl) balanceEl.textContent = `${gameState.balance.toLocaleString()} $BURN`; }
+
+function renderBalance() { updateBalanceText(); syncTopupRange(); }
+
+function topupNiceStep(max) {
+    if (!(max > 0)) return 1;
+    const raw = max / 100;
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const n = raw / pow;
+    const mult = n >= 5 ? 5 : n >= 2 ? 2 : 1;
+    return Math.max(1, Math.round(mult * pow));
+}
+
+function topupBudget() {
+    const skin = gameState.selectedInput?.price || 0;
+    const target = gameState.selectedOutput?.price || 0;
+    if (skin <= 0 || target <= 0) return 0;
+    if ((skin / target) * 100 >= CHANCE_CAP) return 0;
+    const need = (CHANCE_CAP / 100) * target - skin;
+    if (need <= 0) return 0;
+    return round2(Math.min(need, gameState.balance || 0));
+}
+
+function round2(n) { return Math.round(n * 100) / 100; }
+
+function topupIsAvailable() {
+    if (!(gameState.selectedInput && gameState.selectedOutput)) return false;
+    return (gameState.selectedInput.price || 0) > 0 && (gameState.selectedOutput.price || 0) > 0;
+}
+
+function topupApplyRange() {
+    if (!topupRange) return;
+    const max = topupBudget();
+    topupRange.step = 0.01;
+    topupRange.max = max;
+    const staked = parseFloat(topupRange.value) || 0;
+    if (staked > max) topupRange.value = max;
+    if ((gameState.luckBoost || 0) > max) gameState.luckBoost = max;
+    if (topupMaxLbl) topupMaxLbl.textContent = max.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function refreshTopupState() {
+    if (!topupRange) return;
+    const enabled = topupIsAvailable();
+    topupRange.disabled = !enabled;
+    if (topupBox) topupBox.classList.toggle('off', !enabled);
+    if (!enabled) { topupRange.style.setProperty('--fill', '0%'); }
+    return enabled;
+}
+
+function syncTopupRange() {
+    if (!topupRange) return;
+    topupApplyRange();
+    refreshTopupState();
+    updateTopupVisual();
+}
+
+function updateTopupVisual() {
+    if (!topupRange) return;
+    const v = parseFloat(topupRange.value) || 0;
+    const max = parseFloat(topupRange.max) || 0;
+    topupRange.style.setProperty('--fill', max > 0 ? `${(v / max) * 100}%` : '0%');
+    if (topupAmount) topupAmount.textContent = `+${(gameState.luckBoost || 0).toLocaleString()} $B`;
+}
 
 function clampCropPan() {
     if (!cropImage) return;
@@ -410,7 +522,14 @@ function renderRightPane() {
     targetGrid.innerHTML = '';
     let filtered = gameState.marketItems.filter(item => item.name.toLowerCase().includes(searchInput?.value.toLowerCase() || "") && item.price >= (parseFloat(priceFrom?.value) || 0) && item.price <= (parseFloat(priceTo?.value) || Infinity));
     filtered.sort((a, b) => gameState.sortAsc ? a.price - b.price : b.price - a.price);
-    
+
+    if (targetCount) targetCount.textContent = filtered.length;
+
+    if (filtered.length === 0) {
+        targetGrid.innerHTML = '<div class="empty-grid">Ничего не найдено 🔍</div>';
+        return;
+    }
+
     filtered.forEach(item => {
         const isLocked = gameState.selectedInput && item.price <= gameState.selectedInput.price;
         const card = document.createElement('div');
@@ -437,9 +556,34 @@ function selectFileOutput(item) {
     calculateChance(); renderRightPane();
 }
 
-function calculateChance() {
-    if (!gameState.selectedInput || !gameState.selectedOutput) { updateWheelUI(0); return; }
-    updateWheelUI(Math.min((gameState.selectedInput.price / gameState.selectedOutput.price) * 100, 100));
+function getStakeAmount(pendingBoost = 0) {
+    return Math.max(0, (gameState.luckBoost || 0) + pendingBoost);
+}
+
+function getStakeChance(pendingBoost = 0) {
+    const target = gameState.selectedOutput?.price || 0;
+    const skin = gameState.selectedInput?.price || 0;
+    if (target <= 0 || skin <= 0) return 0;
+    const base = (skin / target) * 100;
+    if (base >= CHANCE_CAP) return base;
+    return Math.min(((skin + getStakeAmount(pendingBoost)) / target) * 100, CHANCE_CAP);
+}
+
+function getBaseChance() {
+    const target = gameState.selectedOutput?.price || 0;
+    const skin = gameState.selectedInput?.price || 0;
+    if (target <= 0 || skin <= 0) return 0;
+    return (skin / target) * 100;
+}
+
+function getEffectiveChance(pendingBoost = 0) {
+    return getStakeChance(pendingBoost);
+}
+
+function calculateChance(pendingBoost = 0, instant = false) {
+    syncTopupRange();
+    if (!gameState.selectedInput || !gameState.selectedOutput) { updateWheelUI(0, instant); return; }
+    updateWheelUI(getEffectiveChance(pendingBoost), instant);
 }
 
 const WHEEL_SVG_R = 43;
@@ -514,27 +658,43 @@ function renderWheelArc(targetChance) {
     arcAnimId = requestAnimationFrame(step);
 }
 
-function updateWheelUI(chance) {
+function updateWheelUI(chance, instant = false) {
     if (!chanceText || !wheelScale || !spinBtn || !infoBlock) return;
     chanceText.style.color = "#ffffff";
     if (chanceSubText) chanceSubText.style.display = 'block';
 
     if (!gameState.selectedInput || !gameState.selectedOutput) {
-        renderWheelArc(0);
+        if (instant) { if (arcAnimId) { cancelAnimationFrame(arcAnimId); arcAnimId = null; } lastArcValue = 0; buildWheelSvg(); setWheelArcRaw(0); }
+        else renderWheelArc(0);
         spinBtn.disabled = true; spinBtn.textContent = gameState.selectedInput ? 'Выберите цель' : 'Выберите скины';
         chanceText.textContent = '--'; chanceText.style.color = "rgba(255,255,255,0.3)";
         if (chanceSubText) chanceSubText.style.display = 'none'; return;
     }
     spinBtn.disabled = false; spinBtn.textContent = 'Апгрейд';
     chanceText.textContent = `${chance.toFixed(2)}%`;
-    renderWheelArc(chance);
+    if (instant) { if (arcAnimId) { cancelAnimationFrame(arcAnimId); arcAnimId = null; } lastArcValue = chance; setWheelArcRaw(chance); }
+    else renderWheelArc(chance);
 }
 
 function startUpgrade() {
     if (!gameState.selectedInput || !gameState.selectedOutput) return;
     spinBtn.disabled = true; spinBtn.textContent = 'Крутим...';
     const baseChance = (gameState.selectedInput.price / gameState.selectedOutput.price) * 100;
-    const isWin = Math.random() * 100 <= Math.min(baseChance * gameState.luck, 100);
+    const rollChance = getStakeChance();
+    const isWin = Math.random() * 100 <= rollChance;
+
+    const stake = Math.min(gameState.luckBoost || 0, gameState.balance || 0);
+    if (stake > 0) {
+        gameState.balance = Math.max(0, Math.round((gameState.balance - stake) * 100) / 100);
+        updateBalanceText();
+    }
+
+    const earned = roundCashback((gameState.selectedInput.price || 0) * CASHBACK_RATE);
+    if (earned > 0) {
+        gameState.cashback = roundCashback((gameState.cashback || 0) + earned);
+        updateCashbackUI();
+    }
+    
 
     if (gameState.isTurbo) { resolveResult(isWin); } 
     else {
@@ -554,7 +714,9 @@ function resolveResult(isWin) {
     if (arrowEl) arrowEl.style.transition = "none";
     if (chanceSubText) chanceSubText.style.display = 'none';
     if (chanceText) { chanceText.textContent = isWin ? "УСПЕХ" : "НЕУДАЧА"; chanceText.style.color = isWin ? "#00ff66" : "#ff3333"; }
-    
+
+    gameState.luckBoost = 0;
+
     gameState.inventory = gameState.inventory.filter(i => i.id !== gameState.selectedInput.id);
     if (isWin) gameState.inventory.push({ ...gameState.selectedOutput, id: Math.random(), baseId: gameState.selectedOutput.baseId || gameState.selectedOutput.id });
 
@@ -563,6 +725,7 @@ function resolveResult(isWin) {
     inputSlot.classList.remove('active-slot'); outputSlot.classList.remove('active-slot');
     
     renderLeftPane(); renderRightPane(); renderFullScreens(); updateProfileStats();
+    syncTopupRange();
     saveProgressToServer(); 
     
     spinBtn.disabled = false; spinBtn.textContent = 'Апгрейд';
@@ -586,7 +749,7 @@ function setupEventListeners() {
                 if (response.ok && data.status === "success") {
                     saveSession(user, pass);
                     authStatusMsg.textContent = "Вход выполнен!"; authStatusMsg.style.color = "#00ff66";
-                    setTimeout(() => bypassAuth(user, data.rank, data.balance, data.luck, data.inventory), 800);
+                    setTimeout(() => bypassAuth(user, data.rank, data.balance, data.luck, data.inventory, data.cashback), 800);
                 } else {
                     authStatusMsg.textContent = data.message || "Ошибка входа"; authStatusMsg.style.color = "#ff3333";
                 }
@@ -651,8 +814,29 @@ function setupEventListeners() {
     if (spinBtn) spinBtn.onclick = startUpgrade;
     if (turboBtn) { turboBtn.onclick = () => { gameState.isTurbo = !gameState.isTurbo; turboBtn.textContent = `⚡ Быстрая прокрутка: ${gameState.isTurbo ? 'ВКЛ' : 'ВЫКЛ'}`; turboBtn.classList.toggle('active', gameState.isTurbo); }; }
 
+    if (cashbackBtn) cashbackBtn.onclick = collectCashback;
     if (searchInput) searchInput.oninput = renderRightPane; if (priceFrom) priceFrom.oninput = renderRightPane; if (priceTo) priceTo.oninput = renderRightPane;
-    if (sortPriceBtn) sortPriceBtn.onclick = () => { gameState.sortAsc = !gameState.sortAsc; sortPriceBtn.textContent = gameState.sortAsc ? '⬇️ По цене' : '⬆️ По цене'; renderRightPane(); };
+    if (searchInput) searchInput.oninput = () => { if (searchClear) searchClear.classList.toggle('visible', !!searchInput.value); renderRightPane(); };
+    if (searchClear) searchClear.onclick = () => { if (searchInput) { searchInput.value = ''; searchInput.focus(); } searchClear.classList.remove('visible'); renderRightPane(); };
+    if (sortPriceBtn) sortPriceBtn.onclick = () => { gameState.sortAsc = !gameState.sortAsc; if (sortIco) sortIco.textContent = gameState.sortAsc ? '⬇' : '⬆'; sortPriceBtn.classList.toggle('active', !gameState.sortAsc); renderRightPane(); };
+
+    if (topupRange) {
+        topupRange.oninput = () => {
+            const v = parseFloat(topupRange.value) || 0;
+            gameState.luckBoost = v;
+            updateTopupVisual();
+            calculateChance(true);
+        };
+        topupRange.onchange = () => {
+            if ((gameState.luckBoost || 0) > 0 && topupBox) {
+                topupBox.classList.remove('flash');
+                void topupBox.offsetWidth;
+                topupBox.classList.add('flash');
+            }
+            syncTopupRange();
+        };
+        updateTopupVisual();
+    }
 
     if (document.getElementById('btn-x2')) document.getElementById('btn-x2').onclick = () => autoSelectTargetByChance(50);
     if (document.getElementById('btn-x4')) document.getElementById('btn-x4').onclick = () => autoSelectTargetByChance(25);

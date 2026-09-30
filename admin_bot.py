@@ -8,6 +8,7 @@ import subprocess
 import socket
 import shutil
 import json
+import urllib.error
 import urllib.request
 
 # ==========================================================================
@@ -19,8 +20,9 @@ bot = telebot.TeleBot(ADMIN_TOKEN)
 # ==========================================================================
 # 🌍 НАСТРОЙКИ СЕРВЕРА
 # ==========================================================================
-API_BASE = "https://USERNAME.pythonanywhere.com"  # ← адрес бэкенда в облаке
-ADMIN_KEY = "0bec47b3339752c8e30c3468"             # ← общий секрет с server.py
+CLOUD_API = "https://burnbox-me3b.onrender.com"  # ← адрес бэкенда в облаке
+LOCAL_API = "http://127.0.0.1:5005"
+ADMIN_KEY = os.environ.get('ADMIN_KEY', "0bec47b3339752c8e30c3468")  # ← общий секрет с server.py
 
 PLAYER_RANKS = ["PLAYER [ 1 ]", "BASIC [ 2 ]", "STRIKE [ 3 ]", "FLARE [ 4 ]", "SPARK [ 5 ]", "OPHION [ 6 ]"]
 ADMIN_RANKS = ["HELPER [ 1 ]", "MODERATOR [ 2 ]", "ADMIN [ 3 ]", "OWNER"]
@@ -43,16 +45,33 @@ PANEL_HELP = (
 )
 
 
+def api_bases():
+    """Облако, если адрес реальный, иначе сразу локальный сервер"""
+    bases = []
+    if CLOUD_API and "USERNAME" not in CLOUD_API:
+        bases.append(CLOUD_API)
+    bases.append(LOCAL_API)
+    return bases
+
+
 def api_post(path, payload):
-    """POST-запрос к бэкенду"""
-    req = urllib.request.Request(
-        API_BASE + path,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    """POST-запрос к бэкенду: облако, при недоступности — локальный сервер"""
+    last = None
+    for base in api_bases():
+        try:
+            req = urllib.request.Request(
+                base + path,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            raise
+        except Exception as e:
+            last = e
+    raise last
 
 
 # ==========================================================================

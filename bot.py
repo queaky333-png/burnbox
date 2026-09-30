@@ -1,6 +1,7 @@
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 import json
@@ -15,20 +16,38 @@ bot = telebot.TeleBot(TOKEN)
 # ==========================================================================
 # 🌍 НАСТРОЙКИ СЕРВЕРА И САЙТА
 # ==========================================================================
-API_BASE = "https://USERNAME.pythonanywhere.com"  # ← адрес бэкенда в облаке
+CLOUD_API = "https://burnbox-me3b.onrender.com"  # ← адрес бэкенда в облаке
+LOCAL_API = "http://127.0.0.1:5005"
 SITE_URL = "https://adorable-druid-8f7a9c.netlify.app"  # ← твой фронт на Netlify
 
 
+def api_bases():
+    """Облако, если адрес реальный, иначе сразу локальный сервер"""
+    bases = []
+    if CLOUD_API and "USERNAME" not in CLOUD_API:
+        bases.append(CLOUD_API)
+    bases.append(LOCAL_API)
+    return bases
+
+
 def api_post(path, payload):
-    """POST-запрос к бэкенду"""
-    req = urllib.request.Request(
-        API_BASE + path,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    """POST-запрос к бэкенду: облако, при недоступности — локальный сервер"""
+    last = None
+    for base in api_bases():
+        try:
+            req = urllib.request.Request(
+                base + path,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            raise
+        except Exception as e:
+            last = e
+    raise last
 
 
 @bot.message_handler(commands=['start'])
