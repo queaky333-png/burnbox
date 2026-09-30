@@ -20,9 +20,9 @@ bot = telebot.TeleBot(ADMIN_TOKEN)
 # ==========================================================================
 # 🌍 НАСТРОЙКИ СЕРВЕРА
 # ==========================================================================
-CLOUD_API = "https://burnbox-me3b.onrender.com"  # ← адрес бэкенда в облаке
+CLOUD_API = "https://burnbox-me3b.onrender.com"  # Адрес бэкенда в облаке
 LOCAL_API = "http://127.0.0.1:5005"
-ADMIN_KEY = os.environ.get('ADMIN_KEY', "0bec47b3339752c8e30c3468")  # ← общий секрет с server.py
+ADMIN_KEY = os.environ.get('ADMIN_KEY', "0bec47b3339752c8e30c3468")
 
 PLAYER_RANKS = ["PLAYER [ 1 ]", "BASIC [ 2 ]", "STRIKE [ 3 ]", "FLARE [ 4 ]", "SPARK [ 5 ]", "OPHION [ 6 ]"]
 ADMIN_RANKS = ["HELPER [ 1 ]", "MODERATOR [ 2 ]", "ADMIN [ 3 ]", "OWNER"]
@@ -41,21 +41,17 @@ PANEL_HELP = (
     "<code>/ban [ID] [Мин] [Причина]</code> — бан\n"
     "<code>/unban [ID]</code> — разбан\n"
     "<code>/clear</code> — очистка консоли\n"
-    "<code>/srv</code> — локальный сервер (для dev)"
+    "<code>/srv</code> — управление сервером и техработами"
 )
 
-
 def api_bases():
-    """Облако, если адрес реальный, иначе сразу локальный сервер"""
     bases = []
     if CLOUD_API and "USERNAME" not in CLOUD_API:
         bases.append(CLOUD_API)
     bases.append(LOCAL_API)
     return bases
 
-
 def api_post(path, payload):
-    """POST-запрос к бэкенду: облако, при недоступности — локальный сервер"""
     last = None
     for base in api_bases():
         try:
@@ -73,169 +69,10 @@ def api_post(path, payload):
             last = e
     raise last
 
-
-# ==========================================================================
-# ⚙️ СЕРВЕР LOCAL: ЗАПУСК / ОСТАНОВКА / СТАТУС / ССЫЛКА (для разработки)
-# ==========================================================================
-
-def get_lan_ip():
-    """Определяет локальный IP компьютера в сети (предпочитает домашний Wi-Fi/Ethernet)"""
-    ip_pool = []
-    try:
-        ipcfg = subprocess.run(
-            ["ipconfig"], capture_output=True, text=True, encoding="utf-8", errors="replace"
-        ).stdout
-        for m in re.finditer(r"IPv4[^\n:]*:\s*([0-9.]+)", ipcfg):
-            ip = m.group(1)
-            if ip not in ip_pool:
-                ip_pool.append(ip)
-    except Exception:
-        pass
-
-    # Приоритет: 192.168.* (домашняя сеть) > 10.* > 172.16-31.* > прочее
-    def rank(ip):
-        if ip.startswith("192.168."):
-            return 0
-        if ip.startswith("10."):
-            return 1
-        if ip.startswith("172."):
-            try:
-                b = int(ip.split(".")[1])
-                if 16 <= b <= 31:
-                    return 2
-            except Exception:
-                pass
-        return 3
-
-    if ip_pool:
-        return min(ip_pool, key=rank)
-
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
-
-
-def is_port_open(port=SERVER_PORT, host="127.0.0.1"):
-    try:
-        with socket.create_connection((host, port), timeout=1.5):
-            return True
-    except Exception:
-        return False
-
-
-def kill_by_port(port=SERVER_PORT):
-    """Убивает процесс, который слушает нужный порт"""
-    try:
-        result = subprocess.run(
-            ['netstat', '-ano'], capture_output=True, text=True, encoding="utf-8", errors="replace"
-        )
-        for line in result.stdout.splitlines():
-            if f':{port}' in line and 'LISTENING' in line:
-                pid = line.split()[-1]
-                subprocess.run(['taskkill', '/PID', pid, '/F'], capture_output=True)
-    except Exception:
-        pass
-
-
-def try_allow_firewall(port=SERVER_PORT):
-    """Пытается открыть порт в брандмауэре Windows (нужны права админа)"""
-    try:
-        subprocess.run(
-            ['netsh', 'advfirewall', 'firewall', 'add', 'rule',
-             f'name=BurnBoxServer{port}', 'dir=in', 'action=allow',
-             'protocol=TCP', f'localport={port}'],
-            capture_output=True
-        )
-    except Exception:
-        pass
-
-
-def start_server():
-    """Запускает сервер, если он ещё не запущен"""
-    global SERVER_PROC
-    if is_port_open():
-        return "already", None
-    try:
-        try_allow_firewall()
-        SERVER_PROC = subprocess.Popen(
-            [sys.executable, "server.py"],
-            cwd=BASE_DIR,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        # Ждём до 8 секунд, пока поднимется порт
-        for _ in range(16):
-            time.sleep(0.5)
-            if is_port_open():
-                return "started", SERVER_PROC.pid
-        return "failed", None
-    except Exception as e:
-        print(f"Ошибка запуска сервера: {e}")
-        return "failed", None
-
-
-def stop_server():
-    """Останавливает сервер"""
-    global SERVER_PROC
-    if SERVER_PROC and SERVER_PROC.poll() is None:
-        try:
-            SERVER_PROC.terminate()
-            SERVER_PROC.wait(timeout=5)
-        except Exception:
-            try:
-                SERVER_PROC.kill()
-            except Exception:
-                pass
-        SERVER_PROC = None
-    # Добиваем всё, что осталось висеть на порту
-    kill_by_port(SERVER_PORT)
-
-
-def start_ngrok(port=SERVER_PORT):
-    """Пытается поднять публичный туннель через ngrok"""
-    if not shutil.which("ngrok"):
-        return None
-    try:
-        ngrok_proc = subprocess.Popen(
-            ["ngrok", "http", str(port), "--log=stdout"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-        )
-        # Спрашиваем локальный API ngrok до 10 секунд
-        for _ in range(20):
-            time.sleep(0.5)
-            try:
-                with urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=2) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                for tunnel in data.get("tunnels", []):
-                    pub = tunnel.get("public_url")
-                    if pub:
-                        return pub
-            except Exception:
-                continue
-        ngrok_proc.terminate()
-        return None
-    except Exception:
-        return None
-
-
-# ==========================================================================
-# ОСНОВНОЙ ФУНКЦИОНАЛ
-# ==========================================================================
-
 def is_admin_rank(rank_string):
     return any(r in rank_string.upper() for r in ["HELPER", "MODERATOR", "ADMIN", "OWNER"])
 
-
 def update_user_field(target_id, field, value):
-    """Изменяет поле пользователя через API сервера"""
     try:
         data = api_post("/api/admin/update_field", {
             "key": ADMIN_KEY,
@@ -247,13 +84,11 @@ def update_user_field(target_id, field, value):
     except Exception:
         return False
 
-
 def check_auth(message):
     if message.from_user.id not in active_admins:
         bot.reply_to(message, "🛑 <b>Доступ закрыт.</b>\nВведите логин и пароль от сайта:\n<code>Логин:Пароль</code>", parse_mode="HTML")
         return False
     return True
-
 
 @bot.message_handler(commands=['start'])
 def start_auth(message):
@@ -261,7 +96,6 @@ def start_auth(message):
         bot.reply_to(message, PANEL_HELP, parse_mode="HTML")
     else:
         bot.reply_to(message, "🔐 <b>Вход в Панель Управления</b>\nОтправьте: <code>Логин:Пароль</code>\n\n" + PANEL_HELP, parse_mode="HTML")
-
 
 @bot.message_handler(func=lambda m: ":" in m.text and m.from_user.id not in active_admins)
 def process_login(message):
@@ -290,12 +124,10 @@ def process_login(message):
     except Exception:
         bot.reply_to(message, "⚠️ Ошибка формата. Нужно: <code>Логин:Пароль</code>", parse_mode="HTML")
 
-
 @bot.message_handler(commands=['help'])
 def admin_help(message):
     if not check_auth(message): return
     bot.reply_to(message, PANEL_HELP, parse_mode="HTML")
-
 
 @bot.message_handler(commands=['srv'])
 def server_menu(message):
@@ -307,8 +139,7 @@ def server_menu(message):
         InlineKeyboardButton("📡 Статус", callback_data="srv_status"),
         InlineKeyboardButton("📱 Ссылка", callback_data="srv_link"),
     )
-    bot.reply_to(message, "⚙️ <b>Локальный сервер (dev)</b>\nОсновной сервер сейчас в облаке и работает сам.", reply_markup=markup, parse_mode="HTML")
-
+    bot.reply_to(message, "⚙️ <b>Управление сервером (Техработы)</b>", reply_markup=markup, parse_mode="HTML")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("srv_"))
 def handle_server_callbacks(call):
@@ -317,42 +148,36 @@ def handle_server_callbacks(call):
     msg_id = call.message.message_id
 
     if action == "start":
-        status, pid = start_server()
-        if status == "already":
-            bot.edit_message_text("ℹ️ Сервер уже запущен.", chat_id, msg_id)
-        elif status == "started":
-            bot.edit_message_text(f"✅ <b>Сервер запущен!</b> (PID {pid})", chat_id, msg_id, parse_mode="HTML")
-        else:
-            bot.edit_message_text("❌ Не удалось запустить сервер.\nПроверьте, что не занят порт 5005.", chat_id, msg_id)
+        try:
+            res = api_post("/api/admin/toggle_maintenance", {"key": ADMIN_KEY, "action": "off"})
+            if res.get("status") == "success":
+                bot.edit_message_text("✅ <b>Сервер запущен!</b>\nДоступ для игроков открыт.", chat_id, msg_id, parse_mode="HTML")
+            else:
+                bot.edit_message_text("❌ Ошибка при включении.", chat_id, msg_id)
+        except Exception:
+            bot.edit_message_text("❌ Сервер недоступен.", chat_id, msg_id)
 
     elif action == "stop":
-        stop_server()
-        bot.edit_message_text("⏹️ Сервер остановлен.", chat_id, msg_id)
+        try:
+            res = api_post("/api/admin/toggle_maintenance", {"key": ADMIN_KEY, "action": "on"})
+            if res.get("status") == "success":
+                bot.edit_message_text("⏹️ <b>Сервер остановлен!</b>\nВключен режим технических работ.", chat_id, msg_id, parse_mode="HTML")
+            else:
+                bot.edit_message_text("❌ Ошибка при остановке.", chat_id, msg_id)
+        except Exception:
+            bot.edit_message_text("❌ Сервер недоступен.", chat_id, msg_id)
 
     elif action == "status":
-        running = is_port_open()
-        text = "🟢 <b>Локальный сервер запущен</b>." if running else "🔴 <b>Локальный сервер не запущен.</b>"
-        text += "\n\n🌐 Локальный адрес:\n<code>http://{}</code>".format(f"{get_lan_ip()}:{SERVER_PORT}")
-        bot.edit_message_text(text, chat_id, msg_id, parse_mode="HTML")
+        try:
+            res = api_post("/api/admin/toggle_maintenance", {"key": ADMIN_KEY, "action": "status"})
+            is_maint = res.get("maintenance", False)
+            text = "🔴 <b>Сервер на тех. обслуживании (Остановлен)</b>" if is_maint else "🟢 <b>Сервер работает в штатном режиме</b>"
+            bot.edit_message_text(text, chat_id, msg_id, parse_mode="HTML")
+        except Exception:
+            bot.edit_message_text("🔴 <b>Сервер полностью недоступен (Лежит).</b>", chat_id, msg_id, parse_mode="HTML")
 
     elif action == "link":
-        ip = get_lan_ip()
-        text = (
-            f"📱 <b>Локальная ссылка:</b>\n"
-            f"👉 http://{ip}:{SERVER_PORT}\n\n"
-            f"⚠️ Телефон должен быть в <b>одной Wi-Fi сети</b> с компьютером."
-        )
-        pub_url = start_ngrok()
-        if pub_url:
-            text += f"\n\n🌍 <b>Публичная ссылка (из любой точки):</b>\n👉 {pub_url}"
-        else:
-            text += (
-                "\n\n💡 Чтобы заходить из любого места, настрой ngrok:\n"
-                "<code>ngrok config add-authtoken ТВОЙ_ТОКЕН</code>\n"
-                "и нажми «Ссылка» ещё раз."
-            )
-        bot.edit_message_text(text, chat_id, msg_id, parse_mode="HTML", disable_web_page_preview=True)
-
+        bot.edit_message_text(f"🌍 <b>Ссылка на проект:</b>\n👉 {CLOUD_API}", chat_id, msg_id, parse_mode="HTML", disable_web_page_preview=True)
 
 @bot.message_handler(commands=['users'])
 def show_all_users(message):
@@ -374,7 +199,6 @@ def show_all_users(message):
     else:
         bot.reply_to(message, f"📋 <b>База:</b>\n\n{content}", parse_mode="HTML")
 
-
 @bot.message_handler(commands=['upg'])
 def cmd_upg(message):
     if not check_auth(message): return
@@ -386,7 +210,6 @@ def cmd_upg(message):
     if update_user_field(args[1], "Удача", multiplier): bot.reply_to(message, f"🍀 Удача для <code>{args[1]}</code>: <b>х{multiplier}</b>", parse_mode="HTML")
     else: bot.reply_to(message, "❌ Пользователь не найден в базе.", parse_mode="HTML")
 
-
 @bot.message_handler(commands=['balance'])
 def cmd_balance(message):
     if not check_auth(message): return
@@ -396,7 +219,6 @@ def cmd_balance(message):
         return
     markup = InlineKeyboardMarkup().add(InlineKeyboardButton("💰 Изменить", callback_data=f"editbal_{args[1]}"))
     bot.reply_to(message, f"👤 <b>ID:</b> <code>{args[1]}</code>\nНажмите кнопку для изменения:", reply_markup=markup, parse_mode="HTML")
-
 
 @bot.message_handler(commands=['ban'])
 def cmd_ban(message):
@@ -416,7 +238,6 @@ def cmd_ban(message):
     else:
         bot.reply_to(message, "❌ Пользователь не найден в базе.", parse_mode="HTML")
 
-
 @bot.message_handler(commands=['unban'])
 def cmd_unban(message):
     if not check_auth(message): return
@@ -427,12 +248,10 @@ def cmd_unban(message):
     if update_user_field(args[1], "Бан_до", "0"): bot.reply_to(message, f"🕊 <code>{args[1]}</code> разбанен!", parse_mode="HTML")
     else: bot.reply_to(message, "❌ Пользователь не найден в базе.", parse_mode="HTML")
 
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith("editbal_"))
 def callback_editbal(call):
     msg = bot.edit_message_text(f"✍️ Напишите новую сумму:", call.message.chat.id, call.message.message_id)
     bot.register_next_step_handler(msg, lambda m: update_user_field(call.data.split("_")[1], "Баланс", m.text.strip()) and bot.reply_to(m, "✅ Изменено!"))
-
 
 @bot.message_handler(commands=['priv'])
 def open_privilege_menu(message):
@@ -445,7 +264,6 @@ def open_privilege_menu(message):
     markup.add(*[InlineKeyboardButton(text=r, callback_data=f"setrank_{args[1]}_{r}") for r in PLAYER_RANKS])
     bot.reply_to(message, f"👤 Привилегия для <code>{args[1]}</code>:", reply_markup=markup, parse_mode="HTML")
 
-
 @bot.message_handler(commands=['clear'])
 def cmd_clear(message):
     if not check_auth(message): return
@@ -455,13 +273,11 @@ def cmd_clear(message):
     except Exception:
         bot.reply_to(message, "⚠️ Не удалось очистить консоль.")
 
-
 @bot.callback_query_handler(func=lambda call: call.data.startswith("setrank_"))
 def handle_ranks_callbacks(call):
     parts = call.data.split("_", 2)
     update_user_field(parts[1], "Ранг", parts[2])
     bot.edit_message_text(f"✅ Ранг <b>{parts[2]}</b> выдан!", call.message.chat.id, call.message.message_id, parse_mode="HTML")
-
 
 if __name__ == "__main__":
     bot.infinity_polling()
