@@ -18,8 +18,6 @@ let gameState = {
 
 const tg = window.Telegram?.WebApp;
 
-// Адрес бэкенда. Локально (ПК или телефон в одной сети) идём на сам сервер,
-// с Netlify — в облако. Впиши сюда свой логин PythonAnywhere.
 const CLOUD_API = "https://burnbox-me3b.onrender.com";
 const API_BASE = (location.hostname === "localhost" || location.hostname === "127.0.0.1" ||
   /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(location.hostname))
@@ -77,9 +75,6 @@ const topupAmount = document.getElementById('topup-amount');
 const topupMaxLbl = document.getElementById('topup-max');
 
 const CHANCE_CAP = 80;
-
-// Кешбек начисляется от цены исходного скина за каждый апгрейд.
-// 0.001 = 0.1%: скин за 500 $B даёт 0.5 $B. Копится в 4 знака, чтобы 0.025 не терялось.
 const CASHBACK_RATE = 0.001;
 
 function roundCashback(n) { return Math.round((n + Number.EPSILON) * 10000) / 10000; }
@@ -177,7 +172,6 @@ async function autoLogin() {
     return false;
 }
 
-// 🛡 ЖЕЛЕЗОБЕТОННАЯ ФУНКЦИЯ БАНА
 function showBanScreen(banUntil, reason) {
     if (screenAuth) screenAuth.style.display = 'none';
     if (gameWrapper) gameWrapper.style.display = 'none';
@@ -186,7 +180,6 @@ function showBanScreen(banUntil, reason) {
     const banReason = document.getElementById('ban-reason');
     const banTimer = document.getElementById('ban-timer');
     
-    // Если HTML бана не найден - рисуем черный экран принудительно
     if (!banScreen) {
         document.body.innerHTML = `<div style="background:#0b0c10;color:#ff3333;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
             <h1 style="font-size:40px;">BAN</h1>
@@ -676,12 +669,40 @@ function updateWheelUI(chance, instant = false) {
     else renderWheelArc(chance);
 }
 
+// --- НОВАЯ СИСТЕМА УМНОЙ ПОДКРУТКИ И БЛОКИРОВОК ---
+let isUpgrading = false; // Флаг блокировки кнопки во время прокрутки
+
+function calculateSmartRollChance(baseChance) {
+    const inventoryValue = gameState.inventory.reduce((sum, item) => sum + item.price, 0);
+    const totalWealth = gameState.balance + inventoryValue;
+    
+    let smartChance = baseChance;
+
+    if (totalWealth < 1500) {
+        smartChance += 10; 
+    } 
+    else if (totalWealth > 3000 && totalWealth <= 8000) {
+        smartChance -= 5; 
+    }
+    else if (totalWealth > 8000) {
+        smartChance -= 15; 
+    }
+
+    return Math.max(1, Math.min(95, smartChance));
+}
+
 function startUpgrade() {
-    if (!gameState.selectedInput || !gameState.selectedOutput) return;
-    spinBtn.disabled = true; spinBtn.textContent = 'Крутим...';
+    if (isUpgrading || !gameState.selectedInput || !gameState.selectedOutput) return;
+    
+    isUpgrading = true; 
+    spinBtn.disabled = true; 
+    spinBtn.textContent = 'Крутим...';
+    
     const baseChance = (gameState.selectedInput.price / gameState.selectedOutput.price) * 100;
-    const rollChance = getStakeChance();
-    const isWin = Math.random() * 100 <= rollChance;
+    const visualRollChance = getStakeChance(); 
+    
+    const actualRollChance = calculateSmartRollChance(visualRollChance);
+    const isWin = Math.random() * 100 <= actualRollChance;
 
     const stake = Math.min(gameState.luckBoost || 0, gameState.balance || 0);
     if (stake > 0) {
@@ -695,40 +716,66 @@ function startUpgrade() {
         updateCashbackUI();
     }
     
-
-    if (gameState.isTurbo) { resolveResult(isWin); } 
-    else {
-        if (arrowEl) { arrowEl.style.transition = "none"; currentRotation = 0; arrowEl.style.transform = `rotate(0deg)`; }
-        setTimeout(() => {
-            const startOrange = (50 - (baseChance / 2)), endOrange = (50 + (baseChance / 2));
-            let finalAngle = isWin ? startOrange + (Math.random() * (endOrange - startOrange)) : Math.random() * 100;
-            if (!isWin && finalAngle >= startOrange && finalAngle <= endOrange) finalAngle = (endOrange + Math.random() * (100 - (endOrange - startOrange))) % 100;
-            currentRotation = (5 * 360) + (finalAngle * 3.6);
-            if (arrowEl) { arrowEl.style.transition = "transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)"; arrowEl.style.transform = `rotate(${currentRotation}deg)`; }
-            setTimeout(() => { resolveResult(isWin); }, 4100); 
-        }, 50);
+    if (arrowEl) { 
+        arrowEl.style.transition = "none"; 
+        currentRotation = 0; 
+        arrowEl.style.transform = `rotate(0deg)`; 
     }
+
+    setTimeout(() => {
+        const startOrange = (50 - (baseChance / 2));
+        const endOrange = (50 + (baseChance / 2));
+        
+        let finalAngle = isWin ? startOrange + (Math.random() * (endOrange - startOrange)) : Math.random() * 100;
+        if (!isWin && finalAngle >= startOrange && finalAngle <= endOrange) {
+            finalAngle = (endOrange + Math.random() * (100 - (endOrange - startOrange))) % 100;
+        }
+
+        const spinDuration = gameState.isTurbo ? 1 : 4; 
+        
+        currentRotation = (5 * 360) + (finalAngle * 3.6);
+        
+        if (arrowEl) { 
+            arrowEl.style.transition = `transform ${spinDuration}s cubic-bezier(0.17, 0.67, 0.12, 0.99)`; 
+            arrowEl.style.transform = `rotate(${currentRotation}deg)`; 
+        }
+        
+        setTimeout(() => { 
+            resolveResult(isWin); 
+        }, (spinDuration * 1000) + 100); 
+        
+    }, 50);
 }
 
 function resolveResult(isWin) {
     if (arrowEl) arrowEl.style.transition = "none";
     if (chanceSubText) chanceSubText.style.display = 'none';
-    if (chanceText) { chanceText.textContent = isWin ? "УСПЕХ" : "НЕУДАЧА"; chanceText.style.color = isWin ? "#00ff66" : "#ff3333"; }
+    if (chanceText) { 
+        chanceText.textContent = isWin ? "УСПЕХ" : "НЕУДАЧА"; 
+        chanceText.style.color = isWin ? "#00ff66" : "#ff3333"; 
+    }
 
     gameState.luckBoost = 0;
 
     gameState.inventory = gameState.inventory.filter(i => i.id !== gameState.selectedInput.id);
     if (isWin) gameState.inventory.push({ ...gameState.selectedOutput, id: Math.random(), baseId: gameState.selectedOutput.baseId || gameState.selectedOutput.id });
 
-    gameState.selectedInput = null; gameState.selectedOutput = null;
-    inputSlot.innerHTML = '<div class="empty-placeholder">+</div>'; outputSlot.innerHTML = '<div class="empty-placeholder">?</div>';
-    inputSlot.classList.remove('active-slot'); outputSlot.classList.remove('active-slot');
+    gameState.selectedInput = null; 
+    gameState.selectedOutput = null;
+    inputSlot.innerHTML = '<div class="empty-placeholder">+</div>'; 
+    outputSlot.innerHTML = '<div class="empty-placeholder">?</div>';
+    inputSlot.classList.remove('active-slot'); 
+    outputSlot.classList.remove('active-slot');
     
     renderLeftPane(); renderRightPane(); renderFullScreens(); updateProfileStats();
     syncTopupRange();
     saveProgressToServer(); 
     
-    spinBtn.disabled = false; spinBtn.textContent = 'Апгрейд';
+    spinBtn.disabled = false; 
+    spinBtn.textContent = 'Апгрейд';
+    
+    isUpgrading = false; 
+    
     setTimeout(() => { calculateChance(); }, 2000);
 }
 

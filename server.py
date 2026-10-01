@@ -13,7 +13,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "users.txt")
 
 # ==========================================
-# 🛑 РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ (управляется из админ-бота)
+# 🛑 РЕЖИМ ТЕХНИЧЕСКИХ РАБОТ
 # ==========================================
 MAINTENANCE_MODE = False
 
@@ -35,7 +35,7 @@ def init_db():
             pass
 
 def parse_user_data(line):
-    data = {"rank": "PLAYER [ 1 ]", "balance": 1250.0, "luck": 1.0, "cashback": 0.0, "inventory": [], "banned": False, "ban_until": 0, "ban_reason": ""}
+    data = {"rank": "PLAYER [ 1 ]", "balance": 1250.0, "luck": 1.0, "cashback": 0.0, "inventory": [], "games_played": 0, "banned": False, "ban_until": 0, "ban_reason": ""}
     if " | Ранг: " in line:
         data["rank"] = line.split(" | Ранг: ")[1].split(" |")[0].strip()
     bal_match = re.search(r"\|\s*Баланс:\s*([0-9.]+)", line)
@@ -44,6 +44,8 @@ def parse_user_data(line):
     if luck_match: data["luck"] = float(luck_match.group(1))
     cash_match = re.search(r"\|\s*Кешбек:\s*([0-9.]+)", line)
     if cash_match: data["cashback"] = float(cash_match.group(1))
+    games_match = re.search(r"\|\s*Игр:\s*([0-9]+)", line)
+    if games_match: data["games_played"] = int(games_match.group(1))
     inv_match = re.search(r"\|\s*Инвентарь:\s*([0-9,]+)", line)
     if inv_match:
         data["inventory"] = [int(x) for x in inv_match.group(1).split(",") if x.isdigit()]
@@ -57,6 +59,25 @@ def parse_user_data(line):
             if reason_match: data["ban_reason"] = reason_match.group(1).strip()
     return data
 
+def calculate_house_edge(games_played, base_luck):
+    """
+    Умная система плюса/минуса.
+    Первые 3 игры дают мощный буст шанса (+15%).
+    Затем удача плавно падает.
+    После 20 игр система начинает слегка 'подсливать' игрока (до -10% к базовому шансу),
+    чтобы казино выходило в плюс.
+    """
+    if games_played <= 3:
+        return base_luck + 0.15  # Новичкам сильно везет
+    elif games_played <= 10:
+        return base_luck + 0.05  # Легкая удача
+    elif games_played <= 20:
+        return base_luck         # Честная игра
+    elif games_played <= 50:
+        return base_luck - 0.05  # Начинаем подсливать
+    else:
+        return base_luck - 0.10  # Жесткий минус для опытных
+
 @app.route('/register', methods=['POST', 'OPTIONS'])
 def register():
     if request.method == 'OPTIONS': return '', 200
@@ -69,13 +90,13 @@ def register():
         if any(f"Логин: {username} |" in line for line in f): return jsonify({"status": "error", "message": "⚠️ Логин занят!"}), 400
     web_id = f"WEB-{random.randint(10000000, 99999999)}"
     with open(DB_FILE, "a", encoding="utf-8") as f:
-        f.write(f"ID: {web_id} | Логин: {username} | Пароль: {password} | Ранг: PLAYER [ 1 ] | Баланс: 1250 | Удача: 1.0 | Кешбек: 0.0000 | Инвентарь: 101,103,104\n")
+        f.write(f"ID: {web_id} | Логин: {username} | Пароль: {password} | Ранг: PLAYER [ 1 ] | Баланс: 1250 | Удача: 1.0 | Кешбек: 0.0000 | Игр: 0 | Инвентарь: 101,103,104\n")
     return jsonify({"status": "success"})
 
 @app.route('/login', methods=['POST', 'OPTIONS'])
 def login():
     if request.method == 'OPTIONS': return '', 200
-    if MAINTENANCE_MODE: return jsonify({"status": "error", "message": "⚠️️ Сервер на техническом обслуживании!"}), 503
+    if MAINTENANCE_MODE: return jsonify({"status": "error", "message": "⚠ Сервер на техническом обслуживании!"}), 503
     data = request.get_json(force=True) or {}
     username, password = data.get('username', '').strip(), data.get('password', '').strip()
     init_db()
@@ -86,7 +107,11 @@ def login():
                 user_data = parse_user_data(line)
                 if user_data["banned"]: 
                     return jsonify({"status": "banned", "ban_until": user_data["ban_until"], "ban_reason": user_data["ban_reason"]}), 403
-                return jsonify({"status": "success", "rank": user_data["rank"], "balance": user_data["balance"], "luck": user_data["luck"], "cashback": user_data["cashback"], "inventory": user_data["inventory"]}), 200
+                
+                # Применяем умную удачу
+                dynamic_luck = calculate_house_edge(user_data["games_played"], user_data["luck"])
+                
+                return jsonify({"status": "success", "rank": user_data["rank"], "balance": user_data["balance"], "luck": dynamic_luck, "cashback": user_data["cashback"], "games_played": user_data["games_played"], "inventory": user_data["inventory"]}), 200
     return jsonify({"status": "error", "message": "❌ Неверные данные!"}), 401
 
 @app.route('/tg_auth', methods=['POST', 'OPTIONS'])
@@ -112,18 +137,21 @@ def tg_auth():
         user_data = parse_user_data(user_line)
         if user_data["banned"]:
             return jsonify({"status": "banned", "ban_until": user_data["ban_until"], "ban_reason": user_data["ban_reason"]}), 403
+        
+        dynamic_luck = calculate_house_edge(user_data["games_played"], user_data["luck"])
         send_tg_message(tg_id, "✅ <b>Успешная авторизация!</b>\nВы вошли в систему BurnBox.")
+        
         return jsonify({
             "status": "success", "username": display_name, "rank": user_data["rank"],
-            "balance": user_data["balance"], "luck": user_data["luck"], "cashback": user_data["cashback"], "inventory": user_data["inventory"]
+            "balance": user_data["balance"], "luck": dynamic_luck, "cashback": user_data["cashback"], "games_played": user_data["games_played"], "inventory": user_data["inventory"]
         }), 200
     else:
         with open(DB_FILE, "a", encoding="utf-8") as f:
-            f.write(f"ID: {search_id} | Логин: {display_name} | Пароль: TG_AUTH | Ранг: PLAYER [ 1 ] | Баланс: 1250 | Удача: 1.0 | Кешбек: 0.0000 | Инвентарь: 101,103,104\n")
+            f.write(f"ID: {search_id} | Логин: {display_name} | Пароль: TG_AUTH | Ранг: PLAYER [ 1 ] | Баланс: 1250 | Удача: 1.0 | Кешбек: 0.0000 | Игр: 0 | Инвентарь: 101,103,104\n")
         send_tg_message(tg_id, "🎉 <b>Регистрация успешна!</b>\nВам начислено 1250 $B и стартовые предметы.\nДобро пожаловать в BurnBox!")
         return jsonify({
             "status": "success", "username": display_name, "rank": "PLAYER [ 1 ]",
-            "balance": 1250.0, "luck": 1.0, "cashback": 0.0, "inventory": [101, 103, 104]
+            "balance": 1250.0, "luck": 1.15, "cashback": 0.0, "games_played": 0, "inventory": [101, 103, 104]
         }), 200
 
 @app.route('/get_rank', methods=['POST', 'OPTIONS'])
@@ -140,7 +168,10 @@ def get_rank():
                 user_data = parse_user_data(line)
                 if user_data["banned"]: 
                     return jsonify({"status": "banned", "ban_until": user_data["ban_until"], "ban_reason": user_data["ban_reason"]}), 403
-                return jsonify({"status": "success", "rank": user_data["rank"], "balance": user_data["balance"], "luck": user_data["luck"], "cashback": user_data["cashback"], "inventory": user_data["inventory"]}), 200
+                
+                dynamic_luck = calculate_house_edge(user_data["games_played"], user_data["luck"])
+                
+                return jsonify({"status": "success", "rank": user_data["rank"], "balance": user_data["balance"], "luck": dynamic_luck, "cashback": user_data["cashback"], "games_played": user_data["games_played"], "inventory": user_data["inventory"]}), 200
     return jsonify({"status": "error"}), 404
 
 @app.route('/update_progress', methods=['POST', 'OPTIONS'])
@@ -152,7 +183,9 @@ def update_progress():
     balance = data.get('balance')
     cashback = data.get('cashback', 0)
     inventory = data.get('inventory', [])
+    games_played = data.get('games_played', 0)
     inv_str = ",".join(map(str, inventory))
+    
     with open(DB_FILE, "r", encoding="utf-8") as f: lines = f.readlines()
     new_lines = []
     found = False
@@ -163,6 +196,8 @@ def update_progress():
             else: line = line.strip() + f" | Баланс: {balance}\n"
             if "| Кешбек:" in line: line = re.sub(r"\|\s*Кешбек:\s*[0-9.]+", f"| Кешбек: {cashback}", line)
             else: line = line.strip() + f" | Кешбек: {cashback}\n"
+            if "| Игр:" in line: line = re.sub(r"\|\s*Игр:\s*[0-9]+", f"| Игр: {games_played}", line)
+            else: line = line.strip() + f" | Игр: {games_played}\n"
             if "| Инвентарь:" in line: line = re.sub(r"\|\s*Инвентарь:\s*[0-9,]*", f"| Инвентарь: {inv_str}", line)
             else: line = line.strip() + f" | Инвентарь: {inv_str}\n"
         new_lines.append(line)
@@ -184,17 +219,13 @@ def _admin_ok():
 
 @app.route('/api/admin/toggle_maintenance', methods=['POST', 'OPTIONS'])
 def api_admin_toggle_maintenance():
-    """Включение/выключение режима техработ из админ-бота"""
     if request.method == 'OPTIONS': return '', 200
-    if not _admin_ok():
-        return jsonify({"status": "error", "message": "403"}), 403
+    if not _admin_ok(): return jsonify({"status": "error", "message": "403"}), 403
     global MAINTENANCE_MODE
     data = _get_json()
     action = data.get("action", "status")
-    if action == "on":
-        MAINTENANCE_MODE = True
-    elif action == "off":
-        MAINTENANCE_MODE = False
+    if action == "on": MAINTENANCE_MODE = True
+    elif action == "off": MAINTENANCE_MODE = False
     return jsonify({"status": "success", "maintenance": MAINTENANCE_MODE})
 
 @app.route('/api/admin/users', methods=['POST', 'OPTIONS'])
@@ -202,8 +233,7 @@ def api_admin_users():
     if request.method == 'OPTIONS': return '', 200
     if not _admin_ok(): return jsonify({"status": "error", "message": "403"}), 403
     init_db()
-    with open(DB_FILE, "r", encoding="utf-8") as f:
-        content = f.read()
+    with open(DB_FILE, "r", encoding="utf-8") as f: content = f.read()
     return jsonify({"status": "success", "content": content})
 
 @app.route('/api/admin/auth', methods=['POST', 'OPTIONS'])
@@ -213,8 +243,7 @@ def api_admin_auth():
     data = _get_json()
     login, password = data.get('username', '').strip(), data.get('password', '').strip()
     init_db()
-    with open(DB_FILE, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+    with open(DB_FILE, "r", encoding="utf-8") as f: lines = f.readlines()
     for line in reversed(lines):
         if f"Логин: {login} | Пароль: {password} |" in line:
             rank = line.split(" | Ранг: ")[1].split(" |")[0].strip() if " | Ранг: " in line else "PLAYER"
@@ -230,8 +259,7 @@ def api_admin_update_field():
     target_id, field, value = data.get('target', '').strip(), data.get('field', '').strip(), data.get('value', '').strip()
     if not target_id or not field: return jsonify({"status": "error"}), 400
     init_db()
-    with open(DB_FILE, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+    with open(DB_FILE, "r", encoding="utf-8") as f: lines = f.readlines()
     found = False
     new_lines = []
     for line in lines:
@@ -246,8 +274,7 @@ def api_admin_update_field():
             line += "\n"
         new_lines.append(line)
     if found:
-        with open(DB_FILE, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
+        with open(DB_FILE, "w", encoding="utf-8") as f: f.writelines(new_lines)
         return jsonify({"status": "success"})
     return jsonify({"status": "error", "message": "Пользователь не найден"}), 404
 
@@ -256,22 +283,18 @@ def api_health():
     if request.method == 'OPTIONS': return '', 200
     init_db()
     try:
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            users = sum(1 for line in f if line.strip())
-    except OSError:
-        users = 0
+        with open(DB_FILE, "r", encoding="utf-8") as f: users = sum(1 for line in f if line.strip())
+    except OSError: users = 0
     return jsonify({"status": "success", "ok": True, "users": users, "maintenance": MAINTENANCE_MODE})
 
 STATIC_FILES = {"index.html", "style (4).css", "app.js"}
 
 @app.route('/')
-def serve_index():
-    return send_from_directory(BASE_DIR, 'index.html')
+def serve_index(): return send_from_directory(BASE_DIR, 'index.html')
 
 @app.route('/<path:filename>')
 def serve_static(filename):
-    if filename in STATIC_FILES:
-        return send_from_directory(BASE_DIR, filename)
+    if filename in STATIC_FILES: return send_from_directory(BASE_DIR, filename)
     return 'Not Found', 404
 
 if __name__ == '__main__':
