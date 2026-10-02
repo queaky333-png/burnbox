@@ -104,6 +104,40 @@ let currentRotation = 0;
 let banTimerInterval = null;
 let isUpgrading = false; 
 
+// --- КРАСИВЫЕ ИГРОВЫЕ УВЕДОМЛЕНИЯ ВМЕСТО ALERT/CONFIRM ---
+function showGameModal(text, isConfirm = false, onConfirm = null) {
+    let overlay = document.getElementById('custom-game-modal');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'custom-game-modal';
+        overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.8); z-index:9999; display:flex; align-items:center; justify-content:center; flex-direction:column; opacity:0; transition:opacity 0.2s;';
+        document.body.appendChild(overlay);
+    }
+    
+    overlay.innerHTML = `
+        <div style="background:#1a1d24; border:1px solid rgba(255,77,0,0.3); border-radius:12px; padding:20px; width:80%; max-width:320px; text-align:center; box-shadow:0 10px 30px rgba(0,0,0,0.5); transform:scale(0.9); transition:transform 0.2s;" id="cgm-box">
+            <div style="color:#fff; font-size:14px; margin-bottom:20px; font-weight:600; line-height:1.4;">${text}</div>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                ${isConfirm ? `<button id="cgm-no" style="flex:1; padding:10px; background:rgba(255,255,255,0.05); color:#fff; border:none; border-radius:6px; cursor:pointer; font-weight:bold; transition:0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.05)'">Отмена</button>` : ''}
+                <button id="cgm-yes" style="flex:1; padding:10px; background:#ff4d00; color:#fff; border:none; border-radius:6px; cursor:pointer; font-weight:bold; transition:0.2s;" onmouseover="this.style.filter='brightness(1.2)'" onmouseout="this.style.filter='none'">${isConfirm ? 'Да' : 'ОК'}</button>
+            </div>
+        </div>
+    `;
+    
+    overlay.style.display = 'flex';
+    setTimeout(() => { overlay.style.opacity = '1'; document.getElementById('cgm-box').style.transform = 'scale(1)'; }, 10);
+
+    const close = () => {
+        overlay.style.opacity = '0';
+        document.getElementById('cgm-box').style.transform = 'scale(0.9)';
+        setTimeout(() => { overlay.style.display = 'none'; }, 200);
+    };
+
+    document.getElementById('cgm-yes').onclick = () => { close(); if(onConfirm) onConfirm(); };
+    if(isConfirm) document.getElementById('cgm-no').onclick = close;
+}
+
+
 function init() {
     const urlParams = new URLSearchParams(window.location.search);
     const regUser = urlParams.get('reg_user');
@@ -504,7 +538,7 @@ function updateCartButtonUI() {
     else { cartConfirmBtn.style.display = 'none'; }
 }
 
-// --- НОВАЯ СТИЛЬНАЯ ПАНЕЛЬ В ТЕМАТИКЕ САЙТА (БЕЗ ЖЕЛТОГО) ---
+// --- УМЕНЬШЕННАЯ И КОМПАКТНАЯ ПАНЕЛЬ С ВКЛАДКАМИ ---
 function renderLeftPane() {
     if (!invGrid) return;
     invGrid.innerHTML = '';
@@ -512,19 +546,22 @@ function renderLeftPane() {
     const header = document.createElement('div');
     header.style.gridColumn = '1 / -1';
     header.style.display = 'flex';
-    header.style.gap = '4px';
-    header.style.marginBottom = '12px';
-    header.style.background = 'rgba(255, 255, 255, 0.02)'; // Максимально нейтральный темный фон
+    header.style.gap = '2px';
+    header.style.marginBottom = '8px';
+    header.style.background = 'rgba(255, 255, 255, 0.02)'; 
     header.style.border = '1px solid rgba(255, 255, 255, 0.05)';
-    header.style.padding = '4px';
-    header.style.borderRadius = '8px';
+    header.style.padding = '2px'; // Убрал лишнюю толщину
+    header.style.borderRadius = '6px';
+    
+    // Делаем панель компактной и центрированной (чтобы она не растягивалась на всю ширину, если сетка широкая)
+    header.style.maxWidth = '240px'; 
+    header.style.margin = '0 auto 10px auto';
     
     const isInv = gameState.leftTab !== 'market';
     
-    // Активная вкладка подсвечивается фирменным оранжевым цветом (#ff4d00), неактивная сливается с фоном
     header.innerHTML = `
-        <button onclick="switchLeftTab('inventory')" style="flex:1; padding:5px 0; font-size:12px; border:1px solid ${isInv ? 'rgba(255, 77, 0, 0.3)' : 'transparent'}; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${isInv ? 'rgba(255, 77, 0, 0.1)' : 'transparent'}; color: ${isInv ? '#ff4d00' : 'rgba(255, 255, 255, 0.4)'};">📦 Инвентарь</button>
-        <button onclick="switchLeftTab('market')" style="flex:1; padding:5px 0; font-size:12px; border:1px solid ${!isInv ? 'rgba(255, 77, 0, 0.3)' : 'transparent'}; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${!isInv ? 'rgba(255, 77, 0, 0.1)' : 'transparent'}; color: ${!isInv ? '#ff4d00' : 'rgba(255, 255, 255, 0.4)'};">🛍 Магазин</button>
+        <button onclick="switchLeftTab('inventory')" style="flex:1; padding:4px 0; font-size:11px; border:1px solid ${isInv ? 'rgba(255, 77, 0, 0.3)' : 'transparent'}; border-radius:4px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${isInv ? 'rgba(255, 77, 0, 0.1)' : 'transparent'}; color: ${isInv ? '#ff4d00' : 'rgba(255, 255, 255, 0.4)'}; text-transform:uppercase;">📦 Инвентарь</button>
+        <button onclick="switchLeftTab('market')" style="flex:1; padding:4px 0; font-size:11px; border:1px solid ${!isInv ? 'rgba(255, 77, 0, 0.3)' : 'transparent'}; border-radius:4px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${!isInv ? 'rgba(255, 77, 0, 0.1)' : 'transparent'}; color: ${!isInv ? '#ff4d00' : 'rgba(255, 255, 255, 0.4)'}; text-transform:uppercase;">🛍 Магазин</button>
     `;
     invGrid.appendChild(header);
 
@@ -534,7 +571,8 @@ function renderLeftPane() {
             empty.style.gridColumn = '1 / -1';
             empty.style.textAlign = 'center';
             empty.style.color = 'rgba(255,255,255,0.15)';
-            empty.style.paddingTop = '20px';
+            empty.style.paddingTop = '10px';
+            empty.style.fontSize = '12px';
             empty.textContent = 'Инвентарь пуст';
             invGrid.appendChild(empty);
             return;
@@ -570,7 +608,9 @@ window.buyItemFromLeftPane = function(baseId) {
     if (isUpgrading) return;
     const item = gameState.marketItems.find(i => i.id === baseId);
     if (!item) return;
-    if (confirm(`Купить ${item.name} за ${item.price} $B?`)) {
+    
+    // Используем красивую всплывашку вместо стандартного confirm
+    showGameModal(`Купить "${item.name}" за ${item.price} $B?`, true, () => {
         if (gameState.balance >= item.price) {
             gameState.balance -= item.price;
             gameState.inventory.push({ ...item, id: Math.random(), baseId: item.id });
@@ -581,9 +621,9 @@ window.buyItemFromLeftPane = function(baseId) {
             renderProfileInventory();
             saveProgressToServer();
         } else {
-            alert('Недостаточно средств!');
+            showGameModal('Недостаточно средств на балансе!', false);
         }
-    }
+    });
 };
 
 function renderRightPane() {
@@ -595,7 +635,7 @@ function renderRightPane() {
     if (targetCount) targetCount.textContent = filtered.length;
 
     if (filtered.length === 0) {
-        targetGrid.innerHTML = '<div class="empty-grid">Ничего не найдено 🔍</div>';
+        targetGrid.innerHTML = '<div class="empty-grid" style="font-size:12px;">Ничего не найдено 🔍</div>';
         return;
     }
 
@@ -643,7 +683,7 @@ function renderProfileInventory() {
                     <div class="cube-name">${item.name}</div>
                     <div class="cube-price">${item.price} $B</div>
                     
-                    <button onclick="sellProfileItem(${item.id})" style="position:absolute; bottom:6px; left:6px; z-index:10; background:rgba(255, 51, 51, 0.15); border:1px solid rgba(255, 51, 51, 0.3); border-radius:4px; color:#ff3333; width:24px; height:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; transition:0.2s;" onmouseover="this.style.background='#ff3333'; this.style.color='#fff';" onmouseout="this.style.background='rgba(255, 51, 51, 0.15)'; this.style.color='#ff3333';" title="Продать скин">
+                    <button onclick="sellProfileItem(${item.id})" style="position:absolute; bottom:6px; right:6px; z-index:10; background:rgba(255, 51, 51, 0.15); border:1px solid rgba(255, 51, 51, 0.3); border-radius:4px; color:#ff3333; width:24px; height:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; transition:0.2s;" onmouseover="this.style.background='#ff3333'; this.style.color='#fff';" onmouseout="this.style.background='rgba(255, 51, 51, 0.15)'; this.style.color='#ff3333';" title="Продать скин">
                         💰
                     </button>
                 </div>
@@ -658,7 +698,9 @@ window.sellProfileItem = function(instanceId) {
     if (isUpgrading) return;
     const item = gameState.inventory.find(i => i.id === instanceId);
     if (!item) return;
-    if (confirm(`Точно продать "${item.name}" за ${item.price} $B?`)) {
+    
+    // Используем красивую всплывашку вместо стандартного confirm
+    showGameModal(`Точно продать "${item.name}" за ${item.price} $B?`, true, () => {
         gameState.balance += item.price;
         gameState.inventory = gameState.inventory.filter(i => i.id !== instanceId);
         
@@ -675,7 +717,7 @@ window.sellProfileItem = function(instanceId) {
         updateProfileStats();
         renderProfileInventory();
         saveProgressToServer();
-    }
+    });
 };
 
 function selectFileInput(item) {
@@ -1049,6 +1091,8 @@ function setupEventListeners() {
     if (document.getElementById('modal-yes')) {
         document.getElementById('modal-yes').onclick = () => {
             let totalCost = 0; for (let id in gameState.cart) totalCost += gameState.marketItems.find(i => i.id == id).price * gameState.cart[id];
+            
+            // Вместо alert(Недостаточно средств) тоже юзаем красивое окошко
             if (gameState.balance >= totalCost) {
                 gameState.balance -= totalCost;
                 for (let id in gameState.cart) {
@@ -1058,17 +1102,20 @@ function setupEventListeners() {
                 gameState.cart = {}; if (modal) modal.style.display = 'none';
                 renderBalance(); renderLeftPane(); renderFullScreens(); updateProfileStats(); renderProfileInventory();
                 saveProgressToServer(); 
-            } else { alert('Недостаточно средств на балансе!'); if (modal) modal.style.display = 'none'; }
+            } else { 
+                showGameModal('Недостаточно средств на балансе!', false); 
+                if (modal) modal.style.display = 'none'; 
+            }
         };
     }
 }
 
 function autoSelectTargetByChance(targetChance) {
     if (isUpgrading) return;
-    if (!gameState.selectedInput) return alert('Сначала выберите исходный скин!');
+    if (!gameState.selectedInput) return showGameModal('Сначала выберите исходный скин!', false);
     const idealPrice = (gameState.selectedInput.price / targetChance) * 100;
     const validItems = gameState.marketItems.filter(item => item.price > gameState.selectedInput.price);
-    if (validItems.length === 0) return alert('Нет подходящих скинов для апгрейда!');
+    if (validItems.length === 0) return showGameModal('Нет подходящих скинов для апгрейда!', false);
     selectFileOutput(validItems.reduce((prev, curr) => (Math.abs(curr.price - idealPrice) < Math.abs(prev.price - idealPrice)) ? curr : prev));
 }
 
