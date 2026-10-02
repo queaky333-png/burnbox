@@ -2,7 +2,7 @@ let gameState = {
     balance: 1250, luck: 1.0, luckBoost: 0, cashback: 0, isTurbo: false, sortAsc: true,
     selectedInput: null, selectedOutput: null, cart: {}, 
     isAuthorized: false, username: "Игрок", rank: "PLAYER [ 1 ]", isAdmin: false,
-    leftTab: 'inventory', // 'inventory' или 'market' для левой панели
+    leftTab: 'inventory', 
     
     marketItems: [
         { id: 101, name: 'Куб #047', price: 10, rarity: 'common', icon: '📦' },
@@ -102,7 +102,7 @@ let cropDragStart = null;
 
 let currentRotation = 0; 
 let banTimerInterval = null;
-let isUpgrading = false; // Блокировка взаимодействий при апгрейде
+let isUpgrading = false; 
 
 function init() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -504,30 +504,30 @@ function updateCartButtonUI() {
     else { cartConfirmBtn.style.display = 'none'; }
 }
 
-// --- НОВАЯ СИСТЕМА ЛЕВОЙ ПАНЕЛИ С ВКЛАДКАМИ (Инвентарь / Магазин) ---
+// --- НОВАЯ АККУРАТНАЯ ПАНЕЛЬ С ВКЛАДКАМИ ---
 function renderLeftPane() {
     if (!invGrid) return;
     invGrid.innerHTML = '';
 
-    // Отрисовка красивых вкладок как на скрине
     const header = document.createElement('div');
     header.style.gridColumn = '1 / -1';
     header.style.display = 'flex';
-    header.style.gap = '10px';
-    header.style.marginBottom = '10px';
-    header.style.background = '#13151a';
-    header.style.padding = '5px';
-    header.style.borderRadius = '10px';
+    header.style.gap = '4px';
+    header.style.marginBottom = '12px';
+    header.style.background = '#1a1d24'; // Темный стильный фон 
+    header.style.border = '1px solid rgba(255,255,255,0.05)';
+    header.style.padding = '4px';
+    header.style.borderRadius = '8px';
     
     const isInv = gameState.leftTab !== 'market';
     
+    // Кнопки стали компактнее (font-size: 13px, padding: 6px) и аккуратнее
     header.innerHTML = `
-        <button onclick="switchLeftTab('inventory')" style="flex:1; padding:8px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; transition: 0.2s; background: ${isInv ? '#ffbc00' : 'transparent'}; color: ${isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'};">📦 Инвентарь</button>
-        <button onclick="switchLeftTab('market')" style="flex:1; padding:8px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; transition: 0.2s; background: ${!isInv ? '#ffbc00' : 'transparent'}; color: ${!isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'};">🛍 Магазин</button>
+        <button onclick="switchLeftTab('inventory')" style="flex:1; padding:6px 0; font-size:13px; border:none; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${isInv ? '#ffbc00' : 'transparent'}; color: ${isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'}; box-shadow: ${isInv ? '0 2px 5px rgba(255,188,0,0.3)' : 'none'};">📦 Инвентарь</button>
+        <button onclick="switchLeftTab('market')" style="flex:1; padding:6px 0; font-size:13px; border:none; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${!isInv ? '#ffbc00' : 'transparent'}; color: ${!isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'}; box-shadow: ${!isInv ? '0 2px 5px rgba(255,188,0,0.3)' : 'none'};">🛍 Магазин</button>
     `;
     invGrid.appendChild(header);
 
-    // Отрисовка контента вкладок
     if (isInv) {
         if (gameState.inventory.length === 0) {
             const empty = document.createElement('div');
@@ -609,7 +609,6 @@ function renderRightPane() {
     });
 }
 
-// --- ОТРИСОВКА ИНВЕНТАРЯ В ПРОФИЛЕ И СИСТЕМА ПРОДАЖИ ---
 function renderProfileInventory() {
     let profileInvContainer = document.getElementById('profile-inventory-container');
     if (!profileInvContainer) {
@@ -960,7 +959,6 @@ function setupEventListeners() {
         };
     }
 
-    // Скрываем старую вкладку маркета из нижнего меню
     const oldMarketNavBtn = document.querySelector('[onclick*="screen-market"]');
     if (oldMarketNavBtn) oldMarketNavBtn.style.display = 'none';
 
