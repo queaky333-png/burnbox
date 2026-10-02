@@ -504,6 +504,7 @@ function updateCartButtonUI() {
     else { cartConfirmBtn.style.display = 'none'; }
 }
 
+// --- НОВАЯ СТИЛЬНАЯ ПАНЕЛЬ В ТЕМАТИКЕ САЙТА (БЕЗ ЖЕЛТОГО) ---
 function renderLeftPane() {
     if (!invGrid) return;
     invGrid.innerHTML = '';
@@ -513,16 +514,17 @@ function renderLeftPane() {
     header.style.display = 'flex';
     header.style.gap = '4px';
     header.style.marginBottom = '12px';
-    header.style.background = '#1a1d24'; 
-    header.style.border = '1px solid rgba(255,255,255,0.05)';
+    header.style.background = 'rgba(255, 255, 255, 0.02)'; // Максимально нейтральный темный фон
+    header.style.border = '1px solid rgba(255, 255, 255, 0.05)';
     header.style.padding = '4px';
     header.style.borderRadius = '8px';
     
     const isInv = gameState.leftTab !== 'market';
     
+    // Активная вкладка подсвечивается фирменным оранжевым цветом (#ff4d00), неактивная сливается с фоном
     header.innerHTML = `
-        <button onclick="switchLeftTab('inventory')" style="flex:1; padding:6px 0; font-size:13px; border:none; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${isInv ? '#ffbc00' : 'transparent'}; color: ${isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'}; box-shadow: ${isInv ? '0 2px 5px rgba(255,188,0,0.3)' : 'none'};">📦 Инвентарь</button>
-        <button onclick="switchLeftTab('market')" style="flex:1; padding:6px 0; font-size:13px; border:none; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${!isInv ? '#ffbc00' : 'transparent'}; color: ${!isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'}; box-shadow: ${!isInv ? '0 2px 5px rgba(255,188,0,0.3)' : 'none'};">🛍 Магазин</button>
+        <button onclick="switchLeftTab('inventory')" style="flex:1; padding:5px 0; font-size:12px; border:1px solid ${isInv ? 'rgba(255, 77, 0, 0.3)' : 'transparent'}; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${isInv ? 'rgba(255, 77, 0, 0.1)' : 'transparent'}; color: ${isInv ? '#ff4d00' : 'rgba(255, 255, 255, 0.4)'};">📦 Инвентарь</button>
+        <button onclick="switchLeftTab('market')" style="flex:1; padding:5px 0; font-size:12px; border:1px solid ${!isInv ? 'rgba(255, 77, 0, 0.3)' : 'transparent'}; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${!isInv ? 'rgba(255, 77, 0, 0.1)' : 'transparent'}; color: ${!isInv ? '#ff4d00' : 'rgba(255, 255, 255, 0.4)'};">🛍 Магазин</button>
     `;
     invGrid.appendChild(header);
 
@@ -552,7 +554,7 @@ function renderLeftPane() {
             card.style.position = 'relative';
             card.style.cursor = 'pointer';
             card.innerHTML = `<span class="rarity-badge ${item.rarity}">${item.rarity}</span><div class="cube-img-placeholder">${item.icon}</div><div class="cube-name">${item.name}</div><div class="cube-price">${item.price} $B</div>
-            <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,255,102,0.1); color:#00ff66; text-align:center; font-size:10px; padding:3px; font-weight:bold; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; opacity: 0; transition: 0.2s;" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0">КУПИТЬ</div>`;
+            <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(255,77,0,0.1); color:#ff4d00; text-align:center; font-size:10px; padding:4px; font-weight:bold; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; opacity: 0; transition: 0.2s;" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0">КУПИТЬ</div>`;
             invGrid.appendChild(card);
         });
     }
@@ -641,7 +643,7 @@ function renderProfileInventory() {
                     <div class="cube-name">${item.name}</div>
                     <div class="cube-price">${item.price} $B</div>
                     
-                    <button onclick="sellProfileItem(${item.id})" style="position:absolute; bottom:5px; left:5px; background:rgba(255, 51, 51, 0.2); border:1px solid rgba(255, 51, 51, 0.5); border-radius:4px; color:#ff3333; width:26px; height:26px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; transition:0.2s;" onmouseover="this.style.background='#ff3333'; this.style.color='#fff';" onmouseout="this.style.background='rgba(255, 51, 51, 0.2)'; this.style.color='#ff3333';" title="Продать скин">
+                    <button onclick="sellProfileItem(${item.id})" style="position:absolute; bottom:6px; left:6px; z-index:10; background:rgba(255, 51, 51, 0.15); border:1px solid rgba(255, 51, 51, 0.3); border-radius:4px; color:#ff3333; width:24px; height:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; transition:0.2s;" onmouseover="this.style.background='#ff3333'; this.style.color='#fff';" onmouseout="this.style.background='rgba(255, 51, 51, 0.15)'; this.style.color='#ff3333';" title="Продать скин">
                         💰
                     </button>
                 </div>
