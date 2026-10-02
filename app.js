@@ -504,7 +504,6 @@ function updateCartButtonUI() {
     else { cartConfirmBtn.style.display = 'none'; }
 }
 
-// --- НОВАЯ АККУРАТНАЯ ПАНЕЛЬ С ВКЛАДКАМИ ---
 function renderLeftPane() {
     if (!invGrid) return;
     invGrid.innerHTML = '';
@@ -514,14 +513,13 @@ function renderLeftPane() {
     header.style.display = 'flex';
     header.style.gap = '4px';
     header.style.marginBottom = '12px';
-    header.style.background = '#1a1d24'; // Темный стильный фон 
+    header.style.background = '#1a1d24'; 
     header.style.border = '1px solid rgba(255,255,255,0.05)';
     header.style.padding = '4px';
     header.style.borderRadius = '8px';
     
     const isInv = gameState.leftTab !== 'market';
     
-    // Кнопки стали компактнее (font-size: 13px, padding: 6px) и аккуратнее
     header.innerHTML = `
         <button onclick="switchLeftTab('inventory')" style="flex:1; padding:6px 0; font-size:13px; border:none; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${isInv ? '#ffbc00' : 'transparent'}; color: ${isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'}; box-shadow: ${isInv ? '0 2px 5px rgba(255,188,0,0.3)' : 'none'};">📦 Инвентарь</button>
         <button onclick="switchLeftTab('market')" style="flex:1; padding:6px 0; font-size:13px; border:none; border-radius:6px; cursor:pointer; font-weight:600; transition: 0.2s; background: ${!isInv ? '#ffbc00' : 'transparent'}; color: ${!isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'}; box-shadow: ${!isInv ? '0 2px 5px rgba(255,188,0,0.3)' : 'none'};">🛍 Магазин</button>
@@ -610,10 +608,15 @@ function renderRightPane() {
 }
 
 function renderProfileInventory() {
+    const profileScreen = document.getElementById('screen-profile');
+    if (!profileScreen) return;
+
+    profileScreen.style.overflowY = 'auto';
+    profileScreen.style.justifyContent = 'flex-start'; 
+    profileScreen.style.paddingBottom = '90px'; 
+
     let profileInvContainer = document.getElementById('profile-inventory-container');
     if (!profileInvContainer) {
-        const profileScreen = document.getElementById('screen-profile');
-        if (!profileScreen) return;
         profileInvContainer = document.createElement('div');
         profileInvContainer.id = 'profile-inventory-container';
         profileInvContainer.style.marginTop = '25px';
