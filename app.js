@@ -2,6 +2,7 @@ let gameState = {
     balance: 1250, luck: 1.0, luckBoost: 0, cashback: 0, isTurbo: false, sortAsc: true,
     selectedInput: null, selectedOutput: null, cart: {}, 
     isAuthorized: false, username: "Игрок", rank: "PLAYER [ 1 ]", isAdmin: false,
+    leftTab: 'inventory', // 'inventory' или 'market' для левой панели
     
     marketItems: [
         { id: 101, name: 'Куб #047', price: 10, rarity: 'common', icon: '📦' },
@@ -101,6 +102,7 @@ let cropDragStart = null;
 
 let currentRotation = 0; 
 let banTimerInterval = null;
+let isUpgrading = false; // Блокировка взаимодействий при апгрейде
 
 function init() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -252,7 +254,7 @@ async function fetchActualRank(username) {
                     if (template) gameState.inventory.push({ ...template, id: Math.random(), baseId: template.id });
                 });
             }
-            updateProfileUI(); renderBalance(); renderLeftPane(); renderFullScreens(); updateProfileStats();
+            updateProfileUI(); renderBalance(); renderLeftPane(); renderFullScreens(); updateProfileStats(); renderProfileInventory();
         }
     } catch (e) { console.error("Ошибка синхронизации", e); }
 }
@@ -270,7 +272,7 @@ function bypassAuth(name, rank = "PLAYER [ 1 ]", balance = 1250, luck = 1.0, inv
             if (template) gameState.inventory.push({ ...template, id: Math.random(), baseId: template.id });
         });
     }
-    updateProfileUI(); renderBalance(); renderLeftPane(); renderFullScreens(); updateProfileStats();
+    updateProfileUI(); renderBalance(); renderLeftPane(); renderFullScreens(); updateProfileStats(); renderProfileInventory();
 }
 
 function updateProfileUI() {
@@ -307,6 +309,7 @@ function updateCashbackUI() {
 }
 
 function collectCashback() {
+    if (isUpgrading) return;
     const amount = roundCashback(gameState.cashback || 0);
     if (amount < 0.01) { updateCashbackUI(); return; }
     gameState.balance = Math.round((gameState.balance + Math.floor(amount * 100) / 100) * 100) / 100;
@@ -445,7 +448,10 @@ function confirmCropAndSave() {
 
 window.switchMainScreen = function(screenId, clickedBtnId) {
     if (!gameState.isAuthorized) return;
-    if (screenId === 'screen-profile') fetchActualRank(gameState.username);
+    if (screenId === 'screen-profile') {
+        fetchActualRank(gameState.username);
+        renderProfileInventory();
+    }
     document.querySelectorAll('.app-screen').forEach(screen => screen.style.display = 'none');
     const targetScreen = document.getElementById(screenId);
     if (targetScreen) targetScreen.style.display = 'flex';
@@ -484,6 +490,7 @@ function renderFullScreens() {
 }
 
 window.updateMarketCart = function(id, change) {
+    if (isUpgrading) return;
     let current = gameState.cart[id] || 0;
     let newQty = current + change;
     if (newQty <= 0) delete gameState.cart[id]; else gameState.cart[id] = newQty;
@@ -497,18 +504,87 @@ function updateCartButtonUI() {
     else { cartConfirmBtn.style.display = 'none'; }
 }
 
+// --- НОВАЯ СИСТЕМА ЛЕВОЙ ПАНЕЛИ С ВКЛАДКАМИ (Инвентарь / Магазин) ---
 function renderLeftPane() {
     if (!invGrid) return;
     invGrid.innerHTML = '';
-    if (gameState.inventory.length === 0) { invGrid.innerHTML = '<div style="grid-column: 1/-1; color: rgba(255,255,255,0.15); text-align:center; padding-top:20px;">Инвентарь пуст</div>'; return; }
-    gameState.inventory.forEach(item => {
-        const card = document.createElement('div');
-        card.onclick = () => selectFileInput(item);
-        card.className = `cube-card ${gameState.selectedInput?.id === item.id ? 'selected' : ''}`;
-        card.innerHTML = `<span class="rarity-badge ${item.rarity}">${item.rarity}</span><div class="cube-img-placeholder">${item.icon}</div><div class="cube-name">${item.name}</div><div class="cube-price">${item.price} $B</div>`;
-        invGrid.appendChild(card);
-    });
+
+    // Отрисовка красивых вкладок как на скрине
+    const header = document.createElement('div');
+    header.style.gridColumn = '1 / -1';
+    header.style.display = 'flex';
+    header.style.gap = '10px';
+    header.style.marginBottom = '10px';
+    header.style.background = '#13151a';
+    header.style.padding = '5px';
+    header.style.borderRadius = '10px';
+    
+    const isInv = gameState.leftTab !== 'market';
+    
+    header.innerHTML = `
+        <button onclick="switchLeftTab('inventory')" style="flex:1; padding:8px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; transition: 0.2s; background: ${isInv ? '#ffbc00' : 'transparent'}; color: ${isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'};">📦 Инвентарь</button>
+        <button onclick="switchLeftTab('market')" style="flex:1; padding:8px; border:none; border-radius:8px; cursor:pointer; font-weight:bold; transition: 0.2s; background: ${!isInv ? '#ffbc00' : 'transparent'}; color: ${!isInv ? '#0b0c10' : 'rgba(255,255,255,0.5)'};">🛍 Магазин</button>
+    `;
+    invGrid.appendChild(header);
+
+    // Отрисовка контента вкладок
+    if (isInv) {
+        if (gameState.inventory.length === 0) {
+            const empty = document.createElement('div');
+            empty.style.gridColumn = '1 / -1';
+            empty.style.textAlign = 'center';
+            empty.style.color = 'rgba(255,255,255,0.15)';
+            empty.style.paddingTop = '20px';
+            empty.textContent = 'Инвентарь пуст';
+            invGrid.appendChild(empty);
+            return;
+        }
+        gameState.inventory.forEach(item => {
+            const card = document.createElement('div');
+            card.onclick = () => selectFileInput(item);
+            card.className = `cube-card ${gameState.selectedInput?.id === item.id ? 'selected' : ''}`;
+            card.innerHTML = `<span class="rarity-badge ${item.rarity}">${item.rarity}</span><div class="cube-img-placeholder">${item.icon}</div><div class="cube-name">${item.name}</div><div class="cube-price">${item.price} $B</div>`;
+            invGrid.appendChild(card);
+        });
+    } else {
+        gameState.marketItems.forEach(item => {
+            const card = document.createElement('div');
+            card.onclick = () => buyItemFromLeftPane(item.id);
+            card.className = 'cube-card';
+            card.style.position = 'relative';
+            card.style.cursor = 'pointer';
+            card.innerHTML = `<span class="rarity-badge ${item.rarity}">${item.rarity}</span><div class="cube-img-placeholder">${item.icon}</div><div class="cube-name">${item.name}</div><div class="cube-price">${item.price} $B</div>
+            <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,255,102,0.1); color:#00ff66; text-align:center; font-size:10px; padding:3px; font-weight:bold; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; opacity: 0; transition: 0.2s;" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0">КУПИТЬ</div>`;
+            invGrid.appendChild(card);
+        });
+    }
 }
+
+window.switchLeftTab = function(tab) {
+    if (isUpgrading) return;
+    gameState.leftTab = tab;
+    renderLeftPane();
+};
+
+window.buyItemFromLeftPane = function(baseId) {
+    if (isUpgrading) return;
+    const item = gameState.marketItems.find(i => i.id === baseId);
+    if (!item) return;
+    if (confirm(`Купить ${item.name} за ${item.price} $B?`)) {
+        if (gameState.balance >= item.price) {
+            gameState.balance -= item.price;
+            gameState.inventory.push({ ...item, id: Math.random(), baseId: item.id });
+            renderBalance(); 
+            renderLeftPane(); 
+            renderFullScreens(); 
+            updateProfileStats();
+            renderProfileInventory();
+            saveProgressToServer();
+        } else {
+            alert('Недостаточно средств!');
+        }
+    }
+};
 
 function renderRightPane() {
     if (!targetGrid) return;
@@ -533,7 +609,73 @@ function renderRightPane() {
     });
 }
 
+// --- ОТРИСОВКА ИНВЕНТАРЯ В ПРОФИЛЕ И СИСТЕМА ПРОДАЖИ ---
+function renderProfileInventory() {
+    let profileInvContainer = document.getElementById('profile-inventory-container');
+    if (!profileInvContainer) {
+        const profileScreen = document.getElementById('screen-profile');
+        if (!profileScreen) return;
+        profileInvContainer = document.createElement('div');
+        profileInvContainer.id = 'profile-inventory-container';
+        profileInvContainer.style.marginTop = '25px';
+        profileInvContainer.style.width = '100%';
+        profileInvContainer.style.padding = '15px';
+        profileInvContainer.style.background = 'rgba(255,255,255,0.02)';
+        profileInvContainer.style.borderRadius = '12px';
+        profileScreen.appendChild(profileInvContainer);
+    }
+    
+    let html = '<h3 style="margin-bottom:15px; color:#fff; font-size:16px;">Ваш инвентарь</h3>';
+    html += '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px;">';
+    
+    if (gameState.inventory.length === 0) {
+        html += '<div style="grid-column: 1/-1; color: rgba(255,255,255,0.2); text-align:center;">Инвентарь пуст</div>';
+    } else {
+        gameState.inventory.forEach(item => {
+            html += `
+                <div class="cube-card" style="position:relative; cursor:default;">
+                    <span class="rarity-badge ${item.rarity}">${item.rarity}</span>
+                    <div class="cube-img-placeholder">${item.icon}</div>
+                    <div class="cube-name">${item.name}</div>
+                    <div class="cube-price">${item.price} $B</div>
+                    
+                    <button onclick="sellProfileItem(${item.id})" style="position:absolute; bottom:5px; left:5px; background:rgba(255, 51, 51, 0.2); border:1px solid rgba(255, 51, 51, 0.5); border-radius:4px; color:#ff3333; width:26px; height:26px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:12px; transition:0.2s;" onmouseover="this.style.background='#ff3333'; this.style.color='#fff';" onmouseout="this.style.background='rgba(255, 51, 51, 0.2)'; this.style.color='#ff3333';" title="Продать скин">
+                        💰
+                    </button>
+                </div>
+            `;
+        });
+    }
+    html += '</div>';
+    profileInvContainer.innerHTML = html;
+}
+
+window.sellProfileItem = function(instanceId) {
+    if (isUpgrading) return;
+    const item = gameState.inventory.find(i => i.id === instanceId);
+    if (!item) return;
+    if (confirm(`Точно продать "${item.name}" за ${item.price} $B?`)) {
+        gameState.balance += item.price;
+        gameState.inventory = gameState.inventory.filter(i => i.id !== instanceId);
+        
+        if (gameState.selectedInput && gameState.selectedInput.id === instanceId) {
+            gameState.selectedInput = null;
+            inputSlot.innerHTML = '<div class="empty-placeholder">+</div>'; 
+            inputSlot.classList.remove('active-slot');
+            calculateChance();
+        }
+        
+        renderBalance(); 
+        renderLeftPane(); 
+        renderFullScreens(); 
+        updateProfileStats();
+        renderProfileInventory();
+        saveProgressToServer();
+    }
+};
+
 function selectFileInput(item) {
+    if (isUpgrading) return;
     gameState.selectedInput = item;
     inputSlot.innerHTML = `<div class="cube-img-placeholder">${item.icon}</div><div style="font-size:10px;font-weight:700;">${item.price} $B</div>`;
     inputSlot.classList.add('active-slot');
@@ -542,6 +684,7 @@ function selectFileInput(item) {
 }
 
 function selectFileOutput(item) {
+    if (isUpgrading) return;
     if (gameState.selectedInput && item.price <= gameState.selectedInput.price) return;
     gameState.selectedOutput = item;
     outputSlot.innerHTML = `<div class="cube-img-placeholder">${item.icon}</div><div style="font-size:10px;font-weight:700;">${item.price} $B</div>`;
@@ -669,9 +812,6 @@ function updateWheelUI(chance, instant = false) {
     else renderWheelArc(chance);
 }
 
-// --- НОВАЯ СИСТЕМА УМНОЙ ПОДКРУТКИ И БЛОКИРОВОК ---
-let isUpgrading = false; // Флаг блокировки кнопки во время прокрутки
-
 function calculateSmartRollChance(baseChance) {
     const inventoryValue = gameState.inventory.reduce((sum, item) => sum + item.price, 0);
     const totalWealth = gameState.balance + inventoryValue;
@@ -767,7 +907,7 @@ function resolveResult(isWin) {
     inputSlot.classList.remove('active-slot'); 
     outputSlot.classList.remove('active-slot');
     
-    renderLeftPane(); renderRightPane(); renderFullScreens(); updateProfileStats();
+    renderLeftPane(); renderRightPane(); renderFullScreens(); updateProfileStats(); renderProfileInventory();
     syncTopupRange();
     saveProgressToServer(); 
     
@@ -819,6 +959,10 @@ function setupEventListeners() {
             } catch (error) { authStatusMsg.textContent = "Ошибка сервера!"; }
         };
     }
+
+    // Скрываем старую вкладку маркета из нижнего меню
+    const oldMarketNavBtn = document.querySelector('[onclick*="screen-market"]');
+    if (oldMarketNavBtn) oldMarketNavBtn.style.display = 'none';
 
     if (authTgBtn) authTgBtn.onclick = () => { window.open("https://t.me/burningmarket_bot", "_blank"); };
     if (editNicknameBtn) editNicknameBtn.onclick = () => { nicknameDisplayMode.style.display = 'none'; nicknameEditMode.style.display = 'flex'; nicknameInput.focus(); };
@@ -909,7 +1053,7 @@ function setupEventListeners() {
                     for (let i = 0; i < gameState.cart[id]; i++) gameState.inventory.push({ ...item, id: Math.random(), baseId: item.id });
                 }
                 gameState.cart = {}; if (modal) modal.style.display = 'none';
-                renderBalance(); renderLeftPane(); renderFullScreens(); updateProfileStats();
+                renderBalance(); renderLeftPane(); renderFullScreens(); updateProfileStats(); renderProfileInventory();
                 saveProgressToServer(); 
             } else { alert('Недостаточно средств на балансе!'); if (modal) modal.style.display = 'none'; }
         };
@@ -917,6 +1061,7 @@ function setupEventListeners() {
 }
 
 function autoSelectTargetByChance(targetChance) {
+    if (isUpgrading) return;
     if (!gameState.selectedInput) return alert('Сначала выберите исходный скин!');
     const idealPrice = (gameState.selectedInput.price / targetChance) * 100;
     const validItems = gameState.marketItems.filter(item => item.price > gameState.selectedInput.price);
